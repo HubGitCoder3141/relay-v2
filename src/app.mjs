@@ -15,6 +15,8 @@ function settle(element, {x=0,y=0,duration=220}={}){
 }
 let state, briefing, busy = false, inboxFilter = 'pending', planFilter = '', weekOffset = 0;
 let conversation = [], timer, returnFocus, dirty = false, discard = false;
+let signInEmail = '';
+let accountMode = false;
 let pendingReconciliation;
 let selectedDay='';
 const pages = { briefing: 'Briefing', plan: 'Family plan', inbox: 'Inbox', ask: 'Ask Relay' };
@@ -309,7 +311,8 @@ function household(){
  (members?'<ul class="members">'+members+'</ul>':'<p class="hint">Add a name to identify who a message or plan concerns.</p>')+
  (role==='owner'||role==='admin'?'<form id="member" novalidate><label>Name<input name="name" maxlength="80" required></label><p class="error" role="alert"></p><div class="actions"><button class="btn secondary">Add family member</button></div></form>':'')+
  '<div class="data-actions">'+button('access','Household access','btn secondary')+
- (role==='owner'?'<a class="btn secondary" href="/api/export" download="relay-household.json">Export household data</a>'+button('reset-confirm','Delete household data','btn danger'):'')+'</div>');
+ (role==='owner'?'<a class="btn secondary" href="/api/export" download="relay-household.json">Export household data</a>'+button('reset-confirm','Delete household data','btn danger'):'')+
+ (accountMode?button('account-signout','Sign out','btn secondary'):'')+'</div>');
 }
 const roleLabels={owner:'Owner',admin:'Administrator',member:'Adult member'};
 function accessPanel(code=''){
@@ -344,14 +347,51 @@ async function save(path,data,after,onError){
  if(busy)return;busy=true;dialog.setAttribute('aria-busy','true');content.querySelectorAll('button,input,textarea,select').forEach(e=>e.disabled=true);
  try{state=await api(path,data);dirty=false;busy=false;dialog.close();render();after();}
  catch(err){
-  try{if(onError&&await onError(err))return;showError(err);}
+  try{
+   if(err.code==='sign_in_required'){showSignIn();return;}
+   if(onError&&await onError(err))return;
+   showError(err);
+  }
   catch{showError(new Error('The plan changed. Your draft is still here. Try again to load the latest version.'));}
  }
  finally{busy=false;dialog.removeAttribute('aria-busy');content.querySelectorAll('button,input,textarea,select').forEach(e=>e.disabled=false);}
 }
+function showSignIn(stage='email'){
+ state=undefined;
+ conversation=[];
+ if(dialog.open)dialog.close();
+ const code=stage==='code';
+ main.innerHTML='<section class="account-entry"><h1>Sign in to Relay</h1><p>'+
+  (code?'Enter the code sent to '+esc(signInEmail)+'.':'Use your email to open your household.')+
+  '</p><form id="account-form" data-stage="'+stage+'"><label>'+
+  (code?'Email code<input name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="8" required>'
+       :'Email<input name="email" type="email" autocomplete="email" maxlength="254" required value="'+esc(signInEmail)+'">')+
+  '</label><p class="error" role="alert"></p><div class="actions">'+
+  (code?button('account-email','Change email','btn secondary'):'')+
+  '<button class="btn primary">'+(code?'Sign in':'Send code')+'</button></div></form></section>';
+ main.querySelector('input').focus();
+}
+async function submitAccount(form,data){
+ busy=true;
+ const submit=form.querySelector('button[type="submit"],button:not([type])');
+ submit.disabled=true;
+ try{
+  if(form.dataset.stage==='email'){
+   signInEmail=data.email.trim();
+   await api('auth',{action:'request',email:signInEmail});
+   showSignIn('code');
+  }else{
+   await api('auth',{action:'verify',email:signInEmail,code:data.code});
+   signInEmail='';
+   await start();
+  }
+ }catch(error){form.querySelector('.error').textContent=error.message;}
+ finally{busy=false;submit.disabled=false;}
+}
 document.addEventListener('submit',async e=>{
  const f=e.target;e.preventDefault();if(busy)return;
  const data=Object.fromEntries(new FormData(f));
+ if(f.id==='account-form')return submitAccount(f,data);
  const required=[...f.querySelectorAll('[required]')].find(el=>!el.value.trim());
  if(required){const err=f.querySelector('.error');err.textContent='Enter '+({text:'the original wording',name:'a name',code:'an invitation code',question:'a question',title:f.id==='task'?'an action':'a plan title'}[required.name])+' to continue.';err.id=f.id+'-error';required.setAttribute('aria-invalid','true');required.setAttribute('aria-describedby',err.id);required.focus();return;}
  if(f.id==='member')return save('members',data,()=>{household();notify('Family member added.');});
@@ -386,6 +426,10 @@ document.addEventListener('click',async e=>{
  const id=el.dataset.id;
  switch(el.dataset.action){
  case 'retry':return start();
+ case 'account-email':return showSignIn();
+ case 'account-signout':
+  try{await api('auth',{action:'signout'});showSignIn();}catch(error){notify(error.message);}
+  return;
  case 'reconcile':return reconcileDraft();
  case 'intake':return intake();
  case 'household':return household();
@@ -420,9 +464,12 @@ document.addEventListener('click',async e=>{
 });
 window.addEventListener('hashchange',()=>{if(!state)return;render('route');if(!dialog.open){main.focus({preventScroll:true});window.scrollTo(0,0);}});
 async function start(){
- try{state=await api('state');render();}
+ try{state=await api('state');accountMode=Boolean(state.accountMode);render();}
  catch(err){
-  if(err.code==='access_removed'){
+  if(err.code==='sign_in_required'){
+   accountMode=true;
+   showSignIn();
+  }else if(err.code==='access_removed'){
    state=undefined;
    main.innerHTML=empty('Household access removed','You can join again with a new invitation.')+button('join','Join a household','btn primary');
   }else main.innerHTML=empty('Briefing unavailable','Check the connection to the Relay server and try again.')+button('retry','Try again','btn primary');

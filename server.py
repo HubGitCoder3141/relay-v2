@@ -350,6 +350,9 @@ class RelayHandler(BaseHTTPRequestHandler):
     def demo_enabled(self):
         return self.server.demo
 
+    def decorate_state(self, state):
+        return state
+
     def log_message(self, fmt, *args):
         # The default access log includes paths and untrusted request data.
         pass
@@ -506,7 +509,7 @@ class RelayHandler(BaseHTTPRequestHandler):
                 state["inviteCode"] = invite_code
             if created_source:
                 state["createdSourceId"] = created_source
-        self.json_response(200, state, headers)
+        self.json_response(200, self.decorate_state(state), headers)
 
     def serve(self, post):
         try:

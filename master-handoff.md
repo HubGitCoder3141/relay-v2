@@ -412,3 +412,11 @@ The founder connected the Supabase Free Plan resource `supabase-yellow-engine` t
 Vercel labeled the first API upload Production. The runtime rejects Production and the database is scoped to Preview. The first schema apply reached the earlier empty Supabase project rather than the Marketplace resource, so that earlier project also contains an unused, empty private schema. The final preview pins the actual Marketplace resource and initializes only its isolated schema. No local family data was migrated.
 
 The deployed preview used an explicit file upload. The GitHub repository is still private and Vercel is not configured for automatic Git deployment. For a public production release, independent Production database configuration, production identity and authorization review, and deployment validation remain outstanding. Local verification passed 16 HTTP and 30 JavaScript tests after adding the hosted adapter.
+
+## 22. Public release preparation and preview cleanup
+
+The founder requested a public production release with Relay sign-in and a separate database, and asked to remove the synthetic hosting check. A protected preview maintenance deployment removed two exact fixtures from the preview Postgres database. A repeated check removed zero additional rows. The deletion matched complete original text and expected plan fields and excluded plans with tasks, later sources, or other versions.
+
+Production uses the separate Supabase project `relay` (`tryyihbuzexsgvrfeuwn`) with the private `relay_production` schema and account identity bindings. The schema migration succeeded. The Production-only Supabase publishable key is configured in Vercel. The code adds email OTP sign-in with a Secure HttpOnly account cookie and server-side identity verification before household access. Preview continues to use its separate provider resource and existing protection.
+
+Public release remains gated. Vercel needs the Production-only pooled `POSTGRES_URL`; the production Supabase project needs external Auth email delivery and an OTP template containing the token. After those are set, stage a protected Production candidate, verify sign-in with an external account and household isolation, then release. Local verification passed 18 Python checks and 30 JavaScript tests. Live production sign-in and delivery remain unverified.
