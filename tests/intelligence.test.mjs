@@ -37,6 +37,7 @@ test('only identical normalized source wording is a duplicate candidate', () => 
 });
 
 const cases = [
+  ['What is happening this week?', 'answered', ['p2','p1','p3'], ['s2','s1','s3']],
   ['What is on today?', 'answered', ['p2','p1'], ['s2','s1']],
   ['What is on tomorrow?', 'answered', ['p3'], ['s3']],
   ['What changed?', 'answered', ['p2'], ['s0','s2']],
@@ -50,6 +51,16 @@ const cases = [
   ['Who is handling soccer?', 'unavailable', [], []],
   ['Tell Sam to collect the children', 'unavailable', [], []],
 ];
+
+test('preparation lookup cites current upcoming plans and ignores earlier instructions', () => {
+  const plan = {...second, preparation:'Bring water', instructions:'Use the east gate'};
+  const updated = {...state, plans: [first, plan, {...third, date:'2027-01-08', preparation:'Bring a book'}]};
+  const answer = answerQuestion(updated, 'What should we prepare?', today);
+  assert.deepEqual(answer.sourceIds, ['s2']);
+  assert.match(answer.text, /Bring water.*Use the east gate/);
+  assert.deepEqual(describeChanges({...prior, instructions:'West gate'}, plan).map(x => x.field),
+    ['time', 'preparation', 'instructions']);
+});
 for (const [query,status,planIds,sourceIds] of cases) {
   test('synthetic lookup evaluation: ' + query, () => {
     const answer = answerQuestion(state, query, today);

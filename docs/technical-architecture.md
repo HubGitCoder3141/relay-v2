@@ -22,6 +22,7 @@ flowchart LR
 | Plan projection | current source values and earlier linked source values | Built from version links for the UI and reasoning module. |
 | Follow-through action | household, action ID, plan ID, assigned person, open/done state | Tracks a practical local action without claiming external completion. |
 | Migration ledger | ordered schema versions | Applies idempotent SQLite migrations before the server accepts requests. |
+| Members | household and case-folded display name | Resolves intake names within a workspace and validates plan and task person fields. |
 
 The session token never enters SQLite in readable form. A request cookie is HttpOnly and SameSite=Strict with an `/api/` path. A browser with no valid session gets a new synthetic household only through `GET /api/state`.
 
@@ -36,6 +37,15 @@ The session token never enters SQLite in readable form. A request cookie is Http
 | `/api/reset` | POST | Remove plans and sources from the authorized local household. |
 | `/api/tasks` | POST | Create or toggle an authorized plan-specific follow-through action. |
 | `/api/health` | GET | Return the local service and schema-migration status without reading household data. |
+| `/api/members` | POST | Add a name to the active household roster and return the updated snapshot. |
+| `/api/access` | POST | Invite or revoke an invitation as an administrator or owner. Change an adult's role or remove their access as owner. |
+| `/api/join` | POST | Redeem an unexpired one-time code for a browser session bound to the target household. |
+
+Migration 4 copies each existing owner's hashed cookie into the household access table and separates authorization from people named in plans. Resolve an active session and check role inside the transaction for every mutation. Access changes take effect on the next request. Invites use random codes, stored by hash, with a 24-hour expiration and transactional consumption. Use a separate browser profile to join when the current workspace already holds records. Administrators manage roster and invitations. Owners also manage roles and removal and control export and reset. Adults can read and contribute to the household plan. The local grant does not verify a human identity or recover a lost browser.
+
+An outdated approved source ID returns `409 plan_changed`. The reviewer can refresh the authorized snapshot without losing form values, compare changed fields with the original base and the current plan, and intentionally apply choices before resubmitting. Any intervening approval triggers the same transactional check. A source already decided elsewhere stays closed.
+
+Migration 5 adds location, responsible person, and deadline to the source-backed version. These fields are validated during review and included in snapshots, history, export, and revision comparisons. The intake response names the exact inserted record with `createdSourceId`, so a second browser's concurrent submission cannot send the reviewer to the wrong suggestion.
 
 All mutations validate JSON size and field types, operate in a SQLite transaction, and return the resulting snapshot. Review accepts an `expectedSourceId` for a target plan, preventing a stale reviewer from silently adding a revision after another review changed that plan.
 

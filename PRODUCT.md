@@ -20,11 +20,11 @@ Relay is not a generic chat assistant or calendar: every plan is backed by the o
 
 ## Operating Context
 
-The local V1 is used on a family computer or phone. Its flow is briefing, inbox review, source-backed approval, plan/history inspection, bounded lookup, export, and local deletion.
+The loopback build serves a single browser workspace on the computer running Relay. Its flow is briefing, inbox review, source-backed approval, plan/history inspection, bounded lookup, export, and local deletion.
 
 ## Capabilities and Constraints
 
-Relay currently runs locally on Python and SQLite, uses fictional sample data, and accepts pasted text only. It intentionally has no provider-backed AI, account system, shared login, email connection, upload, OCR, live calendar, or remote deployment. Suggestions require human review before entering the approved plan.
+Relay runs locally on Python and SQLite. New workspaces start empty, with fictional records available in demo mode. Intake accepts pasted text. Suggestions require human review before entering the approved plan. See the V3 scope for account, integration, and deployment limitations.
 
 ## Brand Commitments
 
@@ -40,7 +40,7 @@ The repository contains a working local application, a synthetic household datas
 2. Keep suggestions visibly distinct from approved plans.
 3. Make the next human decision obvious without pretending to automate it.
 4. Prefer a small trustworthy workflow to a broad, ungrounded assistant.
-5. Build for a shared household future while remaining explicit about V1 limits.
+5. Build for a shared household future while accurately labelling the current local workspace.
 
 ## Accessibility & Inclusion
 

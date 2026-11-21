@@ -5,6 +5,7 @@
 // Read-only projections over one authorized household snapshot.
 // Calendar dates and wall-clock times have already been validated by the store.
 const planFields = /** @type {const} */ (['title', 'date', 'time', 'person']);
+const revisionFields = /** @type {const} */ ([...planFields, 'preparation', 'instructions', 'location', 'responsibility', 'deadline']);
 
 export const modelCapabilities = Object.freeze({ available: false, reason: 'model_unavailable' });
 
@@ -29,7 +30,7 @@ export function findDuplicates(state, source) {
 /** @param {PlanVersion} previous
  * @param {PlanVersion} current */
 export function describeChanges(previous, current) {
-  return planFields.filter(field => previous[field] !== current[field])
+  return revisionFields.filter(field => (previous[field] || '') !== (current[field] || ''))
     .map(field => ({ field, before: previous[field] || '', after: current[field] || '' }));
 }
 
@@ -39,9 +40,9 @@ function localDay() {
 }
 
 /** @param {string} day */
-function nextDay(day) {
+function nextDay(day, offset = 1) {
   const next = new Date(day + 'T00:00:00Z');
-  next.setUTCDate(next.getUTCDate() + 1);
+  next.setUTCDate(next.getUTCDate() + offset);
   return next.toISOString().slice(0, 10);
 }
 
@@ -115,6 +116,14 @@ function planAnswer(plans, emptyMessage) {
 export function answerQuestion(state, question, today = localDay()) {
   const query = normalized(question).replace(/[?.!]+$/u, '').replace(/[’‘]/gu,"'");
   const briefing = buildBriefing(state, today);
+  if (/^(?:(?:what is|what's) (?:on|happening) this week|what should we prepare)$/u.test(query)) {
+    const end = nextDay(today, 7);
+    const week = [...briefing.today, ...briefing.upcoming.filter(plan => plan.date < end)];
+    if (query !== 'what should we prepare') return planAnswer(week, 'No approved plans in the next seven days.');
+    const plans = week.filter(plan => plan.preparation || plan.instructions);
+    if (!plans.length) return response('empty', 'No approved preparation or instructions for the next seven days.');
+    return response('answered', plans.map(plan => [plan.title, plan.preparation, plan.instructions].filter(Boolean).join(' · ')).join('\n'), plans);
+  }
   const dayMatch = /^(?:(?:what is|what's|whats) (?:on |happening |scheduled )?(?:the (?:family )?(?:plan|schedule) (?:for )?)?|show (?:the )?(?:plan for )?)(today|tomorrow)$/u.exec(query);
   if (dayMatch) {
     const day = dayMatch[1] === 'today' ? today : nextDay(today);
@@ -148,6 +157,6 @@ export function answerQuestion(state, question, today = localDay()) {
     }));
     return planAnswer(matches,'No approved plan matches that title.');
   }
-  return response('unavailable', 'This lookup supports today, tomorrow, changes, conflicts, pending review and people by plan title. Open-ended interpretation is unavailable.');
+  return response('unavailable', 'Try a lookup about today, tomorrow, this week, preparation, changes, conflicts, pending review or people by plan title.');
 }
 

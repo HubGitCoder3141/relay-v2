@@ -1,7 +1,7 @@
 ---
-version: v2
+version: v3
 name: Relay
-description: A high-density household signal ledger for source-backed coordination.
+description: Modern Family Home, a shared space for household plans and decisions.
 ---
 
 # Relay design system
@@ -12,15 +12,19 @@ Relay is a household coordination assistant for adults sharing family logistics.
 
 ## Visual direction
 
-Relay is a household signal ledger: a calm, technical paper field with black rules, fog-grey stock, and a reserved vermilion signal for attention and action. It deliberately abandons the illustrated-home hero and rounded-SaaS-card language. Information is organized in a ruled ledger, not decorative panels: a narrow navigation mast, headline/decision band, quantitative signal strip, and dense paired plan/review rails.
+Modern Family Home sets the identity and keeps the first view welcoming through real dates, people and plans. A Contemporary Family Journal would give the source history more character, but chronology alone would bury today's schedule. A Premium Family Command Center would be efficient for high volumes, but uniform panels and metrics would shift attention away from the family. Relay uses Home for arrival and people, Journal for the dated plan and history, and the more structured approach for source review and access.
 
-Iowan Old Style/Baskerville-like editorial type carries decisive headings; Aptos/system sans carries compact operational data. Rectangular controls, one-pixel rules, tabular dates, and an explicit task check provide the product's visual grammar. Vermilion communicates unresolved signal, current navigation, and the one decisive pathway; it is never used as soft decoration.
+The supplied references informed the contrast between deep and soft surfaces, the rounded date controls, and the visible presence of people. Relay expresses those ideas through forest and clay arrival panels, a buttery date marker, and color-coded initials generated from household names. Plum identifies Ask Relay. The palette includes paper `#f5eee2`, surface `#fffaef`, forest `#233d34`, clay `#f1c3ad`, sage `#e1eadb`, butter `#f2d681`, and plum `#49334d`. Palatino and Georgia provide editorial headings. Aptos and platform sans-serif support forms and dates. Color reinforces visible labels and controls.
 
 ## Layout and responsive behavior
 
-Desktop uses a 1320px ruled composition. The briefing begins with the actual household state and moves directly into the plan plus decision rail; the page has no generic dashboard card grid. At 760px, the mast collapses, counts retain priority, and the two ledger rails stack while preserving reading order. The action band becomes full width and touch targets stay at least 42px.
+Desktop uses a 1260px composition. The briefing begins with the date and people, then places the week and the review and preparation sections next to one another. At 760px, navigation moves to its own row, sections stack, and the evidence breakdown starts collapsed. Timeline rows keep the person's name at phone widths. Review places the source and decision side by side at larger widths and stacks them at narrower widths.
+
+Date buttons show the plan count in text and use a visible pressed state. Selecting a date filters the agenda and retains keyboard focus. Selecting a person opens their filtered plan timeline. The preparation section uses confirmed plans for the visible forward week and opens the original plan detail. Reconciliation compares previous, confirmed and draft values in reading order, using three columns on larger screens and a stack on phones.
 
 ## Interaction rules
+
+Motion follows the change. Week navigation moves the date strip and agenda in the chosen direction. Date and person filters settle only their changed results. New routes introduce the heading, and confirmed actions draw a check beside the status message. These effects run once for roughly 200–320 ms. Reduced motion keeps focus, selection and confirmation cues with immediate updates.
 
 - Original source wording remains visible before approving a plan.
 - Pending, approved, and rejected sources use text labels and color.

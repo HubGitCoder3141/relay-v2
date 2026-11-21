@@ -8,9 +8,10 @@ DEST = ROOT / "output" / "relay-local.zip"
 
 
 def build():
-    files = [ROOT / name for name in ("server.py", "index.html", "styles.css", "README.md")]
+    files = [ROOT / name for name in ("server.py", "relay_intake.py", "index.html", "styles.css", "README.md")]
     files.extend(sorted((ROOT / "src").glob("*.mjs")))
-    ast.parse(files[0].read_text(encoding="utf-8-sig"))
+    for file in files[:2]:
+        ast.parse(file.read_text(encoding="utf-8-sig"))
     DEST.parent.mkdir(exist_ok=True)
     with ZipFile(DEST, "w", ZIP_DEFLATED) as archive:
         for file in files:

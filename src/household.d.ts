@@ -4,6 +4,11 @@ export interface PlanVersion {
   date: string;
   time: string;
   person: string;
+  preparation?: string;
+  instructions?: string;
+  location?: string;
+  responsibility?: string;
+  deadline?: string;
   sourceId: string;
 }
 
@@ -21,6 +26,15 @@ export interface FamilySource {
   time: string;
   person: string;
   target: string | null;
+  preparation: string;
+  instructions: string;
+  location: string;
+  responsibility: string;
+  deadline: string;
+  extraction: Record<string, {
+    status: 'suggested' | 'conflicting' | 'invalid' | 'needs_date';
+    evidence: {line: number; value: string}[];
+  }>;
 }
 
 export interface FollowThroughTask {
@@ -36,4 +50,16 @@ export interface Household {
   sources: FamilySource[];
   plans: FamilyPlan[];
   tasks: FollowThroughTask[];
+  createdSourceId?: string;
+  access: {
+    viewer: HouseholdAccess;
+    people: HouseholdAccess[];
+    invites: {id: string; name: string; expires: number}[];
+  };
+}
+
+export interface HouseholdAccess {
+  id: string;
+  name: string;
+  role: 'owner' | 'admin' | 'member';
 }

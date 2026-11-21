@@ -1,5 +1,13 @@
 # Relay intelligence architecture
 
+## V3 implementation
+
+`relay_intake.py` parses explicit source lines using the current household roster. It records the original line number and value alongside the extraction status. Contradictory inputs remain blank in the suggested plan until a reviewer chooses a value. The approved preparation and instructions join each plan version. A revision requires the current approved source ID inside the write transaction. Structured retrieval reads the newest approved version and returns its source ID.
+
+Prioritize a synthetic evaluation corpus with conflicting versions, unseen names, missed obligations, layout variants, and expected abstentions. Treat source revision and authority as part of retrieval evaluation alongside citation validity. [Attribute or Abstain](https://aclanthology.org/2024.emnlp-main.463/)
+
+For future multimodal intake, measure exact field recovery and line or region attribution on varied document layouts before introducing document models. [DocVQA](https://arxiv.org/abs/2007.00398/) For future small-model experiments, compare prompted and fine-tuned candidates against deterministic rules on a held-out dataset before considering distillation. Distillation adds teacher outputs, training compute, and independent quality checks. [Distilling Step-by-Step](https://arxiv.org/abs/2305.02301)
+
 ## Working system
 
 Relay keeps household memory in reviewable records. A saved notice supplies the original wording. A caregiver supplies structured fields and approves a new plan or a revision. The current plan carries its supporting source ID. Earlier approved versions retain theirs. The person on a plan is the affected family member. Recording that name does not establish that somebody accepted a responsibility or performed an action.
