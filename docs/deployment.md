@@ -2,13 +2,15 @@
 
 ## Current supported topology
 
-Relay V2 is a loopback-only Python HTTP service with SQLite. Run it on one trusted device:
+Local Relay runs as a loopback-only Python HTTP service with SQLite. Run it on one trusted device:
 
 ```powershell
 python server.py --port 4173
 ```
 
-It is intentionally not deployable on GitHub Pages: the product needs a Python service, transactional persistence, and session authorization. GitHub Pages can only serve static files.
+Relay also has a Vercel-protected preview function in `api/relay.py`. Preview uses the Supabase Marketplace `POSTGRES_URL` and a private `relay_preview` schema. The health endpoint initializes that schema on the pinned preview resource if missing, then checks its version. The function rejects Production requests and does not fall back to SQLite. Vercel authentication must remain enabled for this preview. Use synthetic data. The local and hosted stores are separate.
+
+The product needs a Python service, transactional persistence, and session authorization. GitHub Pages can only serve static files.
 
 ## Required architecture before an internet-facing deployment
 

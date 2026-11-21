@@ -1,0 +1,17 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": null,
+  "functions": {
+    "api/relay.py": {
+      "includeFiles": "{index.html,styles.css,src/*.mjs,server.py,relay_intake.py,supabase/relay_preview.sql}",
+      "excludeFiles": "{.relay/**,output/**,tests/**,docs/**,tools/**}"
+    }
+  },
+  "rewrites": [
+    {"source": "/", "destination": "/api/relay?relay_path="},
+    {"source": "/index.html", "destination": "/api/relay?relay_path=index.html"},
+    {"source": "/styles.css", "destination": "/api/relay?relay_path=styles.css"},
+    {"source": "/src/:file", "destination": "/api/relay?relay_path=src/:file"},
+    {"source": "/api/:path(state|health|export|intake|review|tasks|reset|members|access|join)", "destination": "/api/relay?relay_path=api/:path"}
+  ]
+}

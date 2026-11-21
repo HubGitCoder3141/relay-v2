@@ -155,7 +155,7 @@ def seed(db, household):
     for title, day, hour, person, notice in entries:
         plan = identifier()
         source = add_source(db, household, notice, "approved", (title, day, hour, person, "", "", "", "", ""))
-        db.execute("INSERT INTO versions VALUES (?,?,?)", (household, plan, source))
+        db.execute("INSERT INTO versions (household,plan,source) VALUES (?,?,?)", (household, plan, source))
         if title == "Soccer pickup":
             soccer = plan
     add_source(db, household, "Practice will run 30 minutes later today. Please meet us at the east gate at 4:30 pm.",
@@ -247,7 +247,7 @@ def snapshot(db, household):
     source_by_id = {s["id"]: s for s in sources}
     plans = {}
     for row in db.execute("SELECT plan,source FROM versions WHERE household=? ORDER BY rowid", (household,)):
-        plan_id, source_id = row
+        plan_id, source_id = row["plan"], row["source"]
         details = {k: source_by_id[source_id][k] for k in FIELDS}
         old = plans.get(plan_id)
         history = old["history"] + [{k: old[k] for k in (*FIELDS, "sourceId")}] if old else []
@@ -285,7 +285,7 @@ def apply_review(db, household, payload):
     assignments = ",".join(f"{key}=?" for key in FIELDS)
     db.execute(f"UPDATE sources SET status='approved',{assignments},target=? WHERE household=? AND id=?",
                (*details, target, household, sid))
-    db.execute("INSERT INTO versions VALUES (?,?,?)", (household, target or identifier(), sid))
+    db.execute("INSERT INTO versions (household,plan,source) VALUES (?,?,?)", (household, target or identifier(), sid))
 
 
 def apply_task(db, household, payload):
@@ -307,7 +307,8 @@ def apply_task(db, household, payload):
     plan = field(payload, "plan", 80)
     if plan and db.execute("SELECT 1 FROM versions WHERE household=? AND plan=?", (household, plan)).fetchone() is None:
         raise Problem(404, "This plan is unavailable.")
-    db.execute("INSERT INTO tasks VALUES (?,?,?,?,?,?)", (household, identifier(), title, plan, person, "open"))
+    db.execute("INSERT INTO tasks (household,id,title,plan,person,status) VALUES (?,?,?,?,?,?)",
+               (household, identifier(), title, plan, person, "open"))
 
 
 def connect(database):
@@ -335,6 +336,19 @@ def migrate(database):
 class RelayHandler(BaseHTTPRequestHandler):
     server_version = "Relay"
     sys_version = ""
+    storage_errors = (sqlite3.Error, OSError)
+
+    def open_database(self):
+        return connect(self.server.database)
+
+    def begin_database(self, db, write):
+        db.execute("BEGIN IMMEDIATE" if write else "BEGIN")
+
+    def health_status(self):
+        return {"status": "ok", "schemaVersion": MIGRATIONS[-1][0]}
+
+    def demo_enabled(self):
+        return self.server.demo
 
     def log_message(self, fmt, *args):
         # The default access log includes paths and untrusted request data.
@@ -413,11 +427,11 @@ class RelayHandler(BaseHTTPRequestHandler):
             raise Problem(401, "Open the household overview to start a local session.")
         token = secrets.token_urlsafe(32)
         token_hash = session_hash(token)
-        household = db.execute("INSERT INTO households(session_hash) VALUES (?)", (token_hash,)).lastrowid
+        household = db.execute("INSERT INTO households(session_hash) VALUES (?) RETURNING id", (token_hash,)).fetchone()["id"]
         person_id = identifier()
         db.execute("INSERT INTO household_access VALUES (?,?,?,?,?,1)",
                    (person_id, household, "Workspace owner", token_hash, "owner"))
-        if self.server.demo:
+        if self.demo_enabled():
             seed(db, household)
         return db.execute("SELECT * FROM household_access WHERE id=?", (person_id,)).fetchone(), self.session_headers(token)
 
@@ -449,11 +463,11 @@ class RelayHandler(BaseHTTPRequestHandler):
         if path not in allowed:
             raise Problem(404, "Unknown endpoint.")
         if path == "/api/health":
-            self.json_response(200, {"status": "ok", "schemaVersion": MIGRATIONS[-1][0]})
+            self.json_response(200, self.health_status())
             return
         data = self.read_json() if post else {}
-        with closing(connect(self.server.database)) as db, db:
-            db.execute("BEGIN IMMEDIATE" if post or path == "/api/state" else "BEGIN")
+        with closing(self.open_database()) as db, db:
+            self.begin_database(db, post or path == "/api/state")
             viewer, headers = self.join(db, data) if path == "/api/join" else self.household(db, path == "/api/state")
             household = viewer["household"]
             invite_code = None
@@ -515,10 +529,10 @@ class RelayHandler(BaseHTTPRequestHandler):
             self.respond(200, file.read_bytes(), mime + "; charset=utf-8")
         except Problem as err:
             self.json_response(err.status, {"error": str(err), **err.details})
-        except (sqlite3.Error, OSError) as error:
+        except self.storage_errors as error:
             # Keep sensitive request content out of logs while preserving the
             # storage failure needed to diagnose a local startup problem.
-            print(f"Relay storage error: {type(error).__name__}: {error}", flush=True)
+            print(f"Relay storage error: {type(error).__name__}; SQLSTATE: {getattr(error, 'sqlstate', None)}", flush=True)
             self.json_response(503, {"error": "Relay could not access local storage. Try again."})
         except ValueError:
             self.json_response(400, {"error": "Invalid request."})
