@@ -35,11 +35,12 @@ export interface FamilySource {
     status: 'suggested' | 'conflicting' | 'invalid' | 'needs_date' | 'needs_context' | 'low_confidence' | 'ambiguous';
     evidence: {line: number; value: string; start?: number; end?: number}[];
     anchor?: string;
+    anchorOrigin?: 'entered' | 'email_header';
     confidence?: number;
     inferred?: boolean;
     candidate?: string;
   }>;
-  interpretation?: {kind: string; kindConfidence: number; intent: string; intentConfidence: number};
+  interpretation?: {kind: string; kindConfidence: number; intent: string; intentConfidence: number; reviewReason?: string};
 }
 
 export interface FollowThroughTask {

@@ -19,7 +19,8 @@ CHAR_BUCKETS = 512
 CHAR_SLOTS = 10
 SHAPES = 16
 TOKEN = re.compile(r"[^\W\d_]+|\d+|[^\w\s]|_", re.UNICODE)
-MODEL_PATH = Path(__file__).with_name("models") / "relay_nlu_v1.npz"
+MODEL_PATH = Path(__file__).with_name("models") / "relay_nlu_v2.npz"
+REFERENCE_PATH = MODEL_PATH.with_name("relay_nlu_v1.npz")
 
 
 @dataclass(frozen=True)
@@ -94,19 +95,31 @@ def probabilities(logits, temperature):
 
 def decode_spans(text, matches, scores):
     spans = []
-    # A constrained BIO decoder never starts a field with an inside tag.
+    # Optimize the complete tag path instead of deciding span boundaries token by token.
+    breaks = [True, *(
+        any(char in text[previous.end():current.start()] for char in "\r\n")
+        for previous, current in zip(matches, matches[1:])
+    )]
+    log_scores = np.log(np.maximum(scores, 1e-12))
     for field_index, field in enumerate(FIELDS):
         first = None
         token_scores = []
-        for i, row in enumerate(scores[:, field_index, :]):
-            tag = int(np.argmax(row if first is not None else row[:2]))
-            if first is not None and (tag != 2 or "\n" in text[matches[i-1].end():matches[i].start()]):
+        likelihood = np.array([0., -np.inf, -np.inf])
+        path = []
+        for row, line_break in zip(log_scores[:, field_index, :], breaks):
+            best = int(likelihood.argmax())
+            inside = int(likelihood[2] > likelihood[1]) + 1
+            path.append((best, best, inside))
+            likelihood = row + [likelihood[best], likelihood[best], -np.inf if line_break else likelihood[inside]]
+        tags = [int(likelihood.argmax())]
+        for parents in reversed(path[1:]):
+            tags.append(parents[tags[-1]])
+        for i, (tag, row) in enumerate(zip(reversed(tags), scores[:, field_index, :])):
+            if first is not None and tag != 2:
                 spans.append(Span(field, matches[first].start(), matches[i-1].end(),
                                   math.prod(token_scores) ** (1 / len(token_scores))))
                 first = None
                 token_scores = []
-                if tag == 2:
-                    tag = int(np.argmax(row[:2]))
             if tag == 1:
                 first = i
                 token_scores = [float(row[1])]
@@ -164,22 +177,44 @@ class NoticeModel:
             return matrix @ w[name + ".weight"].T + w[name + ".bias"]
         return project("slots", context).reshape(-1, len(FIELDS), 3), project("kind", pooled), project("intent", pooled)
 
+    def posteriors(self, matches, members):
+        slots, kind, intent = self.logits(matches, members)
+        temperatures = self.metadata["temperatures"]
+        return (probabilities(slots, np.array(temperatures["slots"])[:, None]),
+                probabilities(kind, temperatures["kind"]), probabilities(intent, temperatures["intent"]))
+
     def predict(self, text, members=()):
         matches = tokens(text)
         if not matches or len(matches) > MAX_TOKENS:
             return None
-        slots, kind, intent = self.logits(matches, members)
-        temperatures = self.metadata["temperatures"]
-        kind = probabilities(kind, temperatures["kind"])
-        intent = probabilities(intent, temperatures["intent"])
-        slot_scores = probabilities(slots, np.array(temperatures["slots"])[:, None])
+        slot_scores, kind, intent = self.posteriors(matches, members)
         return Prediction(KINDS[int(kind.argmax())], float(kind.max()), INTENTS[int(intent.argmax())],
                           float(intent.max()), decode_spans(text, matches, slot_scores))
 
 
+class NoticeEnsemble(NoticeModel):
+    """Mix calibrated scores while retaining the verified clock and roster heads."""
+    def __init__(self, primary, reference):
+        self.primary = primary
+        self.reference = reference
+
+    def posteriors(self, matches, members):
+        slots, kind, intent = self.primary.posteriors(matches, members)
+        other_slots, other_kind, other_intent = self.reference.posteriors(matches, members)
+        weight = np.array([0. if field in ("time", "person", "responsibility") else .75
+                           for field in FIELDS])[None, :, None]
+        return (slots * weight + other_slots * (1 - weight),
+                .75 * kind + .25 * other_kind, .75 * intent + .25 * other_intent)
+
+
 @lru_cache(maxsize=1)
 def deployed_model():
-    try:
-        return NoticeModel()
-    except (OSError, ValueError, KeyError, BadZipFile):
-        return None
+    models = []
+    for path in (MODEL_PATH, REFERENCE_PATH):
+        try:
+            models.append(NoticeModel(path))
+        except (OSError, ValueError, KeyError, BadZipFile):
+            continue
+    if len(models) == 2:
+        return NoticeEnsemble(*models)
+    return models[0] if models else None

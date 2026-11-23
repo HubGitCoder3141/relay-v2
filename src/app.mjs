@@ -219,7 +219,7 @@ function evidence(s){
   report.evidence.map(item=>'<p>Line '+item.line+' · '+esc(item.value||'Empty')+'</p>').join('')+
   (key==='time'&&report.candidate?'<p>Possible start time '+esc(timeLabel(report.candidate))+'.</p>':'')+
   (Number.isFinite(report.confidence)?'<p>Model score '+Math.round(report.confidence*100)+'%'+(report.inferred?' · Matched to the household roster':'')+'</p>':'')+
-  (report.anchor?'<p>Based on message date '+esc(dateLabel(report.anchor))+'.</p>':'')+'</li>');
+  (report.anchor?'<p>Based on message date '+esc(dateLabel(report.anchor))+(report.anchorOrigin==='email_header'?' from the email header.':'.')+'</p>':'')+'</li>');
  const flagged=Object.values(s.extraction||{}).filter(item=>item.status!=='suggested').length;
  const label=flagged?' · '+flagged+' to check':'';
  return lines.length?'<details class="evidence" '+(matchMedia('(min-width:761px)').matches?'open':'')+'><summary>What Relay found'+label+'</summary><ul>'+lines.join('')+'</ul></details>':'';
@@ -229,8 +229,10 @@ function noticeInterpretation(source){
  if(!detected)return '';
  const kinds={sports:'Sports',homework:'Homework',meeting:'Meeting',appointment:'Appointment',reminder:'Reminder',trip:'Trip',event:'Event'};
  const warnings={cancel:'This message may cancel a plan. Check the original wording before making a change.',
-  multiple:'This message may contain more than one plan. Review each plan separately.'};
- const warning=detected.intentConfidence>=.72&&warnings[detected.intent];
+  multiple:'This message may contain more than one plan. Review each plan separately.',
+  tentative:'These details appear tentative. Confirm them before scheduling.',
+  none:'Relay couldn’t confirm there is a new plan in this message.'};
+ const warning=warnings[detected.reviewReason]||(detected.intentConfidence>=.72&&warnings[detected.intent]);
  const kind=detected.kindConfidence>=.72&&kinds[detected.kind];
  return (warning?'<p class="warning">'+esc(warning)+'</p>':'')+
   (kind?'<p class="hint">Suggested plan type · '+esc(kind)+'</p>':'');

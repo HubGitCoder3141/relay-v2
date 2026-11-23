@@ -3,10 +3,11 @@ from pathlib import Path
 import tempfile
 import unittest
 from unittest.mock import patch
+import numpy as np
 
 from relay_intake import extract
-from relay_interpretation import active_notice_model, interpret, interpret_notice, visible_text
-from relay_nlu import NoticeModel, Prediction, Span
+from relay_interpretation import active_notice_model, interpret, interpret_notice, sent_date, visible_text
+from relay_nlu import FIELDS, NoticeModel, Prediction, Span, decode_spans, deployed_model, tokens
 
 
 SOCCER = ("Hey, soccer practice is Tuesday at 5 PM. Bring cleats and water. "
@@ -16,7 +17,8 @@ SOCCER = ("Hey, soccer practice is Tuesday at 5 PM. Bring cleats and water. "
 class NoticeModelTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.model = NoticeModel()
+        cls.model = deployed_model()
+        assert cls.model is not None
 
     def test_learned_model_recovers_conversational_soccer_plan(self):
         values, evidence = interpret(SOCCER, ["Coach Alex", "Sam"], "2026-11-23", self.model)
@@ -79,6 +81,31 @@ class NoticeModelTests(unittest.TestCase):
         self.assertEqual(visible[offset:offset+8], "Practice")
         self.assertNotIn("example.org", visible)
         self.assertNotIn("5 pm", visible)
+
+    def test_copied_email_header_resolves_relative_dates_with_visible_provenance(self):
+        text = ("From: School <info@example.org>\nDate: Mon, 23 Nov 2026 09:00:00 -0600\n"
+                "Subject: Chess club\n\nWhen: tomorrow at 4 PM")
+        values, evidence = interpret(text, (), model=self.model)
+        self.assertEqual((values["date"], values["time"]), ("2026-11-24", "16:00"))
+        self.assertEqual(evidence["date"]["anchorOrigin"], "email_header")
+        values, _ = interpret(text, (), "2026-11-24", self.model)
+        self.assertEqual(values["date"], "2026-11-25")
+        self.assertEqual(sent_date("Latest details below\nFrom: Old <old@example.org>\nDate: Mon, 23 Nov 2026 09:00:00 -0600"), "")
+
+    def test_tentative_schedules_withhold_dates_even_with_explicit_fields(self):
+        text = "The class might happen if the coach confirms. No decision yet.\nDate: 27 November 2026\nTime: 5 PM"
+        values, evidence = interpret(text, (), model=self.model)
+        self.assertNotIn("date", values)
+        self.assertNotIn("time", values)
+        self.assertEqual(evidence["_model"]["reviewReason"], "tentative")
+
+    def test_span_decoder_uses_context_and_cannot_cross_lines(self):
+        text = "winter concert\nprogram"
+        matches = tokens(text)
+        scores = np.tile([.99, .005, .005], (len(matches), len(FIELDS), 1))
+        scores[:, 0] = [[.53, .46, .01], [.1, .05, .85], [.22, .03, .75]]
+        spans = decode_spans(text, matches, scores)
+        self.assertEqual([(s.field, text[s.start:s.end]) for s in spans], [("title", "winter concert")])
 
     def test_disabled_and_oversized_inputs_preserve_rule_fallback(self):
         text = "When: December 4, 2026 at 5 pm"

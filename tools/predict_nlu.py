@@ -5,7 +5,7 @@ import sys
 
 from relay_intake import valid_date
 from relay_interpretation import interpret
-from relay_nlu import FIELDS, NoticeModel
+from relay_nlu import FIELDS, NoticeModel, deployed_model
 
 
 def main():
@@ -19,7 +19,7 @@ def main():
     text = sys.stdin.read(12001)
     if not text.strip() or len(text) > 12000:
         parser.error("Provide a notice of 1 to 12000 characters on stdin")
-    model = NoticeModel(args.model) if args.model else NoticeModel()
+    model = NoticeModel(args.model) if args.model else deployed_model()
     values, evidence = interpret(text, args.member, args.source_date, model)
     prediction = evidence.pop("_model", None)
     print(json.dumps({"plan":{field:values.get(field) for field in FIELDS},

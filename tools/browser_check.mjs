@@ -258,6 +258,16 @@ try {
   assert.equal(await learnedReview.locator('select[name="responsibility"]').inputValue(),'');
   await capture('learned-notice-review');
   await page.keyboard.press('Escape');
+  await page.getByRole('button',{name:'Add information',exact:true}).click();
+  await page.getByLabel('Original wording').fill('From: Club <club@example.org>\nDate: Mon, 23 Nov 2026 09:00:00 -0600\nSubject: Chess club\n\nWhen: tomorrow at 4 PM');
+  await page.getByRole('button',{name:'Create suggestion'}).click();
+  const datedReview=page.getByRole('dialog');
+  await datedReview.getByLabel('Date',{exact:true}).waitFor();
+  assert.equal(await datedReview.getByLabel('Date',{exact:true}).inputValue(),'2026-11-24');
+  const modelEvidence=datedReview.getByText(/What Relay found/);
+  await modelEvidence.click();
+  await datedReview.getByText(/from the email header/).waitFor();
+  await page.keyboard.press('Escape');
   for(let index=0;index<120;index++){
     await post(page,'intake',{title:'Synthetic notice '+index,text:'Date: '+today+'\nInstructions: '+('Bring equipment. '.repeat(36))});
   }

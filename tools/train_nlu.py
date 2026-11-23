@@ -15,7 +15,7 @@ from torch.nn import functional as F
 from torch.utils.data import DataLoader
 
 from relay_nlu import (CHAR_BUCKETS, CHAR_SLOTS, FIELDS, INTENTS, KINDS, MAX_TOKENS,
-                       MODEL_PATH, SHAPES, NoticeModel, encode, lexical_key, probabilities, tokens)
+                       MODEL_PATH, SHAPES, NoticeEnsemble, NoticeModel, encode, lexical_key, probabilities, tokens)
 from tools.nlu_data import Example, evaluation_examples, training_examples
 
 
@@ -145,6 +145,9 @@ def main():
     parser.add_argument("--test")
     parser.add_argument("--output", type=Path, default=MODEL_PATH)
     parser.add_argument("--evaluate-only", action="store_true")
+    parser.add_argument("--challenge", action="store_true", help="Evaluate the separate versioned challenge set")
+    parser.add_argument("--release-check", action="store_true", help="Evaluate the fixed post-selection set")
+    parser.add_argument("--reference", type=Path, help="Include a reference artifact when evaluating")
     args = parser.parse_args()
     torch.set_num_threads(2)
     torch.manual_seed(args.seed)
@@ -152,8 +155,14 @@ def main():
     examples = load_rows(args.train) if args.train else training_examples(args.seed, args.per_frame)
     calibration = load_rows(args.calibration) if args.calibration else evaluation_examples("calibration")
     test = load_rows(args.test) if args.test else evaluation_examples("test")
+    if args.challenge or args.release_check:
+        from tools.nlu_challenge import examples as challenge_examples
+        test = challenge_examples(release=args.release_check)
     if args.evaluate_only:
-        print(json.dumps(score(test, NoticeModel(args.output)), indent=2))
+        candidate = NoticeModel(args.output)
+        if args.reference:
+            candidate = NoticeEnsemble(candidate, NoticeModel(args.reference))
+        print(json.dumps(score(test, candidate), indent=2))
         return
     splits = [{row.text for row in split} for split in (examples, calibration, test)]
     if not all(splits) or splits[0] & splits[1] or splits[0] & splits[2] or splits[1] & splits[2]:

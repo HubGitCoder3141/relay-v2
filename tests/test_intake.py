@@ -52,3 +52,9 @@ class NoticeInterpretationTests(unittest.TestCase):
                          ("2027-01-01", "12:00", "2026-12-31"))
         self.assertEqual(report["date"]["anchor"], "2026-12-31")
         self.assertEqual(report["deadline"]["evidence"], [{"line": 2, "value": "today"}])
+
+    def test_unambiguous_day_first_forms_and_tonight(self):
+        values, _ = extract("When: Friday, 4 December 2026 at 6 PM\nDue: 2 Dec 2026", [])
+        self.assertEqual((values["date"], values["deadline"]), ("2026-12-04", "2026-12-02"))
+        values, _ = extract("When: tonight at 6 PM", [], "2026-11-23")
+        self.assertEqual((values["date"], values["time"]), ("2026-11-23", "18:00"))

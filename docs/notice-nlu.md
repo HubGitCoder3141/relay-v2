@@ -10,7 +10,7 @@ The relation model binds typed spans to one plan frame. It distinguishes roles s
 
 For “soccer practice is Tuesday at 5 PM … Meet Coach Alex at the community field by 4:45,” the event time is 5 PM. The earlier number stays in the instruction. Coach Alex is a contact in that instruction. The affected person, caregiver responsibility, and separate due date need supporting information.
 
-The exported NPZ contains only weights, vocabulary and scalar temperatures. Vercel uses NumPy for CPU inference and loads the weights once per warm process. Training uses PyTorch. The server caps model input at 192 tokens and uses the deterministic intake path for longer messages or a missing model. Preprocessing masks quoted history and mail headers while preserving source offsets. Exact text spans, model scores and inference notes are persisted with the draft in the existing evidence field. The API creates pending suggestions only. It does not approve plans or submit actions.
+The two exported NPZ files contain weights, vocabulary and scalar temperatures. Vercel loads them once per warm process and serves them with NumPy. Relay combines the calibrated span and classification scores before finding the best legal BIO sequence. It keeps the earlier clock and household-role heads where the newer weights regressed. Training uses PyTorch. The server caps model input at 192 tokens and uses deterministic extraction for longer messages or a missing model. Preprocessing masks quoted history and mail headers without moving source offsets. An unambiguous date in a leading copied email header can anchor relative dates. A reviewer-supplied sent date takes precedence. Exact spans, model scores and the anchor's origin are persisted in the draft evidence. The API creates pending suggestions only.
 
 ## Reproduce and evaluate
 
@@ -19,7 +19,8 @@ From the repository root with Python 3.12 or newer:
 ```powershell
 python -m pip install -r requirements-training.txt
 $env:OPENBLAS_NUM_THREADS = '1'
-python -m tools.train_nlu --epochs 15 --per-frame 22
+python -m tools.train_nlu --epochs 12 --per-frame 22 --challenge
+python -m tools.train_nlu --evaluate-only --release-check --reference models/relay_nlu_v1.npz
 "Hey, soccer practice is Tuesday at 5 PM. Bring cleats and water. Meet Coach Alex at the community field by 4:45." |
   python -m tools.predict_nlu --source-date 2026-11-23
 ```
@@ -28,7 +29,7 @@ Optional `--train`, `--calibration`, and `--test` take UTF-8 JSONL. Each row con
 
 Training uses weighted per-token cross entropy, separate kind and intent losses, AdamW and gradient clipping. Temperature fitting uses a calibration split. Export checks PyTorch and NumPy logits agree before replacing the artifact. Evaluation reports exact-span micro and per-field precision, recall and F1, intent/type accuracy, approximate span calibration error and warm CPU latency. Temperatures are fitted for token scores. The displayed span score aggregates token scores and needs calibration against a larger independent corpus before it can be treated as an accuracy probability.
 
-The checked-in artifact used 5,642 generated training examples, nine calibration messages and ten separately written synthetic evaluation messages. Raw exact-span precision was 0.697, recall 0.742 and F1 0.719 on that set. Plan type and message intent each matched all ten labels. Warm CPU p95 was about 1.8 ms for model inference alone. Field coverage varied, and the few person and responsibility examples are insufficient to establish reliability. These examples were used during development and do not estimate live accuracy.
+The newer artifact used 8,964 generated training examples and 135 calibration messages. On 22 synthetic notices used to choose the model combination, raw exact-span F1 rose from 0.598 to 0.754 and message-intent accuracy from 0.636 to 0.909. The previous weights and the ensemble used the same decoder for this comparison. On 14 separate post-selection synthetic notices, F1 rose from 0.597 to 0.649 and intent accuracy from 0.786 to 0.857. The revised system remains experimental. A larger consented corpus is needed to measure real-world reliability, especially on titles, uncommon formatting, languages, and notices with multiple activities.
 
 ## Architecture recommendation
 

@@ -1,6 +1,7 @@
 """Combine learned role assignments with Relay's date and household constraints."""
 from collections import defaultdict
 from datetime import date
+from email.utils import parsedate_to_datetime
 import os
 import re
 
@@ -16,6 +17,14 @@ GENERIC_TITLES = {"fyi", "update", "reminder", "heads up", "schedule", "practice
 NON_LOCATIONS = {"a", "an", "the", "there", "here", "near", "by", "at", "in"}
 SCHEDULE_FIELDS = ("date", "time", "deadline", "location", "preparation", "person", "responsibility")
 DUE_CUE = re.compile(r"\b(?:due(?:\s+(?:by|on))?|deadline:?|rsvp(?:\s+by)?)\s*$", re.I)
+CANCELLATION = re.compile(
+    r"\b(?:is|was|has been)\s+(?:cancel(?:l?ed)|called off)\b|"
+    r"\b(?:will not|won['’]t) take place\b|\bisn['’]t (?:happening|going ahead)\b|"
+    r"\bpostponed (?:until further notice|with no new date)\b", re.I)
+PROVISIONAL = re.compile(
+    r"\b(?:might happen|if the weather holds|pending confirmation|no decision yet|"
+    r"nothing is booked yet|waiting (?:on|for) confirmation|still waiting to hear)\b", re.I)
+REVISED = re.compile(r"\b(?:is now confirmed|has now been confirmed|has been rescheduled|new date is)\b", re.I)
 
 
 def visible_text(text):
@@ -35,6 +44,32 @@ def visible_text(text):
         content = content or bool(line.strip())
         lines.append(line)
     return "".join(lines)
+
+
+def sent_date(text):
+    """Read only a contiguous email header. A bare event Date line is separate."""
+    lines = text.splitlines()
+    for i, line in enumerate(lines[:20]):
+        if not re.match(r"\s*From:\s*.+@", line, re.I):
+            if not line.strip() or re.match(r"\s*(?:Subject:|-+\s*Forwarded message\b)", line, re.I):
+                continue
+            break
+        dates = set()
+        for following in lines[i+1:i+10]:
+            header = re.fullmatch(r"\s*(date|sent|subject|to|cc|bcc|reply-to):\s*(.*)", following, re.I)
+            if not header:
+                break
+            if header[1].casefold() not in ("sent", "date"):
+                continue
+            value = explicit_date(header[2])
+            if not value:
+                try:
+                    value = parsedate_to_datetime(header[2]).date().isoformat()
+                except (TypeError, ValueError, OverflowError):
+                    continue
+            dates.add(value)
+        return next(iter(dates)) if len(dates) == 1 else ""
+    return ""
 
 
 def evidence_for(text, span):
@@ -69,20 +104,34 @@ def normalize(field, value, names, anchor):
 
 
 def interpret(text, members, source_date="", model=None):
+    date_origin = "entered" if source_date else "email_header"
+    source_date = source_date or sent_date(text)
     values, evidence = extract(text, members, source_date)
+    if source_date and date_origin == "email_header":
+        for report in evidence.values():
+            if report.get("anchor"):
+                report["anchorOrigin"] = date_origin
     if model is None:
         return values, evidence
-    result = model.predict(visible_text(text), members)
+    visible = visible_text(text)
+    result = model.predict(visible, members)
     if result is None:
         return values, evidence
-    evidence["_model"] = {"kind": result.kind, "kindConfidence": round(result.kind_confidence, 3),
-                          "intent": result.intent, "intentConfidence": round(result.intent_confidence, 3)}
-    if result.intent in ("cancel", "multiple", "none") and result.intent_confidence >= .72:
-        if result.intent != "none":
-            for field in SCHEDULE_FIELDS:
-                values.pop(field, None)
-                if field in evidence:
-                    evidence[field]["status"] = "ambiguous"
+    finding = {"kind": result.kind, "kindConfidence": round(result.kind_confidence, 3),
+               "intent": result.intent, "intentConfidence": round(result.intent_confidence, 3)}
+    evidence["_model"] = finding
+    contextual_guard = None
+    if not REVISED.search(visible):
+        if CANCELLATION.search(visible):
+            contextual_guard = "cancel"
+        elif PROVISIONAL.search(visible):
+            contextual_guard = "tentative"
+    if contextual_guard or result.intent in ("cancel", "multiple", "none") and result.intent_confidence >= .72:
+        finding["reviewReason"] = contextual_guard or result.intent
+        for field in SCHEDULE_FIELDS:
+            values.pop(field, None)
+            if field in evidence:
+                evidence[field]["status"] = "ambiguous"
         return values, evidence
 
     anchor = date.fromisoformat(source_date) if source_date else None
@@ -137,6 +186,7 @@ def interpret(text, members, source_date="", model=None):
         report["status"] = "suggested"
         if field in ("date", "deadline") and source_date and any(not explicit_date(item) for item in raw):
             report["anchor"] = source_date
+            report["anchorOrigin"] = date_origin
         if field in ("person", "responsibility") and any(value.casefold() != item.casefold() for item in raw):
             report["inferred"] = True
     return values, evidence

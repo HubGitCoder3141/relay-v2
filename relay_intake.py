@@ -24,7 +24,8 @@ DAY_NAMES.update(tues=1, thurs=3, thur=3, weds=2)
 DATE_WORDS = "(?:" + "|".join(MONTH_NAMES) + r")\.?\s+[0-9]{1,2}(?:st|nd|rd|th)?(?:,?\s+[0-9]{4})?"
 DAY_WORDS = "(?:" + "|".join(DAY_NAMES) + r")\.?"
 ISO = r"[0-9]{4}-[0-9]{2}-[0-9]{2}"
-DATE_TEXT = rf"(?:{ISO}|(?:{DAY_WORDS}[, ]+)?{DATE_WORDS}|(?:this\s+)?{DAY_WORDS}|today|tomorrow)"
+DAY_FIRST = r"[0-9]{1,2}(?:st|nd|rd|th)?\s+(?:" + "|".join(MONTH_NAMES) + r")\.?(?:\s+[0-9]{4})?"
+DATE_TEXT = rf"(?:{ISO}|(?:{DAY_WORDS}[, ]+)?(?:{DATE_WORDS}|{DAY_FIRST})|(?:this\s+)?{DAY_WORDS}|today|tomorrow|tonight)"
 TIME_TEXT = r"(?:noon|midnight|[0-9]{1,2}(?::[0-9]{2})?\s*[ap]\.?m\.?|[0-9]{2}:[0-9]{2})(?![\w:])"
 WHEN_TEXT = re.compile(rf"(?P<date>{DATE_TEXT})(?:\s*(?:,\s*|\bat\s+|@\s*|\s+)(?P<time>{TIME_TEXT}))?", re.I)
 
@@ -44,7 +45,7 @@ def explicit_date(value, anchor=None):
     if valid_date(value):
         return value
     normalized = value.casefold().strip()
-    if anchor and normalized in ("today", "tomorrow"):
+    if anchor and normalized in ("today", "tomorrow", "tonight"):
         try:
             return (anchor + timedelta(days=normalized == "tomorrow")).isoformat()
         except OverflowError:
@@ -57,9 +58,13 @@ def explicit_date(value, anchor=None):
         except OverflowError:
             return ""
     match = re.fullmatch(r"(?:(\w+)\.?,?\s+)?([a-z]+)\.?\s+([0-9]{1,2})(?:st|nd|rd|th)?(?:,?\s+([0-9]{4}))?", normalized)
-    if not match:
-        return ""
-    weekday, month, day, year = match.groups()
+    if match:
+        weekday, month, day, year = match.groups()
+    else:
+        day_first = re.fullmatch(r"(?:(\w+)\.?,?\s+)?([0-9]{1,2})(?:st|nd|rd|th)?\s+([a-z]+)\.?(?:\s+([0-9]{4}))?", normalized)
+        if not day_first:
+            return ""
+        weekday, day, month, year = day_first.groups()
     if month not in MONTH_NAMES or (weekday and weekday not in DAY_NAMES) or not (year or anchor):
         return ""
     try:
@@ -124,6 +129,9 @@ def source_fields(line):
     deadline = re.fullmatch(rf"(?:please\s+)?(?:rsvp|register|sign up|return\s+.+?|submit\s+.+?|pay\s+.+?)\s+by\s+({DATE_TEXT})[.]?", line, re.I)
     if deadline:
         return [("deadline", deadline[1]), ("instructions", line)]
+    due_statement = re.fullmatch(rf"(?:quick reminder\s*[:—–-]\s*)?(.{{2,120}}?)\s+(?:is\s+due|must be (?:done|returned|submitted) by)\s+({DATE_TEXT})[.]?", line, re.I)
+    if due_statement:
+        return [("title", due_statement[1]), ("deadline", due_statement[2])]
     instruction = re.match(r"^(?:please\s+)?(?:arrive|check in|enter|use|meet|pick up|drop off)\s+", line, re.I)
     if instruction:
         return [("instructions", line)]
