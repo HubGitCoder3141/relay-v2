@@ -165,7 +165,7 @@ def extract(text, members, source_date=""):
         if re.match(r"^\s*(?:[-*•]\s+)?(?:subject|title|event)\s*:", line, re.I):
             subject_evidence.extend({"line": number, "value": value} for key, value in source_fields(line) if key == "title")
             continue
-        for sentence in re.split(r"\.(?=\s+(?:Please|Bring|Pack|Arrive|Use|Enter|RSVP)\b)", line):
+        for sentence in re.split(r"\.(?=\s+(?:Please|Bring|Pack|Arrive|Use|Enter|RSVP|Meet|Check|Upload|Submit|Drop)\b)", line):
             for key, value in source_fields(sentence):
                 evidence[key].append({"line": number, "value": value})
     multiple_activities = len({item["value"].casefold() for item in evidence["title"]}) > 1

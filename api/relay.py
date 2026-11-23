@@ -12,6 +12,7 @@ import psycopg
 from psycopg.rows import dict_row
 
 from relay_auth import SupabaseAuth, account_cookie, session_token
+from relay_interpretation import active_notice_model
 from server import MIGRATIONS, Problem, RelayHandler, field, session_hash
 
 SCHEMA_FILE = Path(__file__).resolve().parent.parent / "supabase" / "relay_preview.sql"
@@ -136,7 +137,8 @@ class handler(RelayHandler):
                 db.execute("SELECT 1 FROM family_owner_sessions LIMIT 1").fetchone()
         if actual != MIGRATIONS[-1][0]:
             raise Problem(503, "The Relay database schema needs an update.")
-        return {"status": "ok", "database": "postgres", "schemaVersion": actual}
+        return {"status": "ok", "database": "postgres", "schemaVersion": actual,
+                "noticeModelAvailable": active_notice_model() is not None}
 
     def auth(self):
         return SupabaseAuth(PRODUCTION_PROJECT, os.environ.get("SUPABASE_PUBLISHABLE_KEY"))

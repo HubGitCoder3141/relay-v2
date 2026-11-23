@@ -32,10 +32,14 @@ export interface FamilySource {
   responsibility: string;
   deadline: string;
   extraction: Record<string, {
-    status: 'suggested' | 'conflicting' | 'invalid' | 'needs_date';
-    evidence: {line: number; value: string}[];
+    status: 'suggested' | 'conflicting' | 'invalid' | 'needs_date' | 'needs_context' | 'low_confidence' | 'ambiguous';
+    evidence: {line: number; value: string; start?: number; end?: number}[];
     anchor?: string;
+    confidence?: number;
+    inferred?: boolean;
+    candidate?: string;
   }>;
+  interpretation?: {kind: string; kindConfidence: number; intent: string; intentConfidence: number};
 }
 
 export interface FollowThroughTask {

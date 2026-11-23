@@ -20,7 +20,8 @@ Relay keeps household memory in reviewable records. A saved notice supplies the 
 | Historical memory | Prior versions in chronological order, each linked to its source | A change can be explained even after the current date, time or person changes. |
 | Follow-through memory | Plan-scoped local action with person and open/done state | Records an internal household step; it does not prove an outside-world result. |
 | Derived observation | Read-only result of a comparison or projection | A possible collision, duplicate candidate or absent field prompts inspection. |
-| AI interpretation, suggested external actions, caregiver acceptance and real-world completion | Unavailable in this version | Each would require its own provenance, authority and state transition. |
+| Learned notice interpretation | Runs on the server when the bundled model is enabled | Produces evidence-linked pending suggestions. See [notice model](notice-nlu.md). |
+| Suggested external actions, caregiver acceptance and real-world completion | Outside this workflow | Each requires its own provenance, authority and state transition. |
 
 The application obtains the authorized household snapshot from the server. The reasoning module receives only this snapshot. It has no database connection, account discovery, ambient retrieval or mutation tools. Recomputing a briefing or asking a question leaves the snapshot untouched. Browser-rendered insights are informational. The server owns authorization and persistent transitions.
 
@@ -44,7 +45,7 @@ The browser and test runner import the same module from `src/intelligence.mjs`.
 | `describeChanges(previous, current)` | Returns before and after values for title, date, time and person. |
 | `findDuplicates(state, source)` | Returns other notices with identical original wording after case and whitespace normalization. Preserves punctuation and all originals. |
 | `answerQuestion(state, question, today?, previousPlanId?)` | Looks up dates and named people, plan details and responsibility, due and overdue work, changes, conflicts, and pending review. A follow-up can refer to a single previously cited plan. Names that match multiple plans return choices. Answers return the IDs of plans, sources, and actions they use. |
-| `modelCapabilities` and `interpretSource(request)` | The capability flag is false. The asynchronous boundary returns an unavailable reason and an empty candidate list. No provider, key, model, transport or inference call exists. |
+| Browser `modelCapabilities` and `interpretSource(request)` | Browser-side inference remains unavailable. Pasted notices go through the server-side intake path. Ask Relay remains a grounded lookup over authorized records. |
 
 Conflicts require the same nonempty person, date and time on two current plans. This catches a child scheduled for two simultaneous activities. Duration, travel time, caregiver availability, time zones and undated obligations require additional evidence. Schedule lookups use approved titles and fields, and Ask Relay refreshes the scoped household state before answering. Questions are evaluated in the browser. The supported language and notice formats are covered by synthetic tests rather than an accuracy benchmark from real families.
 
@@ -52,7 +53,7 @@ Conflicts require the same nonempty person, date and time on two current plans. 
 
 A pasted instruction is household content. It cannot request a tool, modify a plan, authorize disclosure or change the question grammar. Every supported answer is rebuilt from scoped records and has inspectable references when it uses evidence. The system currently supports local synthetic household evaluation. The bounded grammar is deterministic application logic.
 
-If model interpretation becomes authorized, the proposed request contract should include a scoped source reference, exact wording, the minimum necessary context, and schema version. A candidate response should carry a field, proposed value, supporting verbatim range, source ID and any ambiguity. The server should verify that each citation and range belongs to the authorized input, validate the field, persist candidates separately and require a human decision before promoting any candidate. Model failure, invalid output or an unresolvable citation should return the source to manual review. Scope retrieval before any provider call. A model should receive neither database access nor execution authority.
+The local model receives the notice and roster over the existing server-side intake path. It has no storage or execution interface. The model assigns roles to spans, and the server resolves values from those spans, persists evidence with the pending candidate, and requires a human decision before approval. Model failure or unresolvable evidence leaves the deterministic fallback and manual review available.
 
 External actions would require a separate server-side executor with explicit operation, recipient, household authorization, a reviewable preview, retry protection and a result receipt. Sending a message, accepting a pickup, observing delivery and completing the pickup represent different events. None is available through lookup.
 

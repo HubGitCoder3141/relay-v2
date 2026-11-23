@@ -10,6 +10,8 @@ python server.py --port 4173
 
 Open [http://127.0.0.1:4173](http://127.0.0.1:4173). New browser sessions start with an empty workspace. Add family names in Household, then paste a message under Add information. The workspace lives in `.relay/households.sqlite3`. Household also offers export and deletion.
 
+To enable the bundled notice model locally, install the pinned NumPy dependency with `python -m pip install numpy==2.4.3`. See [notice model training and deployment](docs/notice-nlu.md).
+
 To try fictional sample data in a separate workspace, run `python server.py --port 4174 --demo --database .relay/demo.sqlite3`.
 
 If the page says **“Briefing unavailable”**, close any earlier Relay terminal windows, run the command above once, and refresh this exact `127.0.0.1` address. Opening `index.html` directly or through a static preview cannot start the local API.
@@ -27,7 +29,7 @@ To try local collaboration, open **Household → Household access** and create a
 
 ## Capability boundary
 
-Relay uses local browser access. Verified accounts, cross-device sharing, external integrations, email connections, file processing and model inference remain future work. Intake accepts pasted text. The deterministic parser recognizes separate lines such as:
+Intake accepts pasted text. The bundled model identifies plan type, notice intent and source spans when available. The deterministic path remains available and recognizes lines such as:
 
 ```text
 Subject: Winter concert

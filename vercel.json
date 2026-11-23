@@ -3,7 +3,7 @@
   "framework": null,
   "functions": {
     "api/relay.py": {
-      "includeFiles": "{index.html,styles.css,src/*.mjs,server.py,relay_intake.py,relay_auth.py,supabase/relay_preview.sql}",
+      "includeFiles": "{index.html,styles.css,src/*.mjs,server.py,relay_intake.py,relay_interpretation.py,relay_nlu.py,models/*.npz,relay_auth.py,supabase/relay_preview.sql}",
       "excludeFiles": "{.relay/**,output/**,tests/**,docs/**,tools/**}"
     }
   },

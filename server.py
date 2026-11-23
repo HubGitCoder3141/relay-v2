@@ -13,7 +13,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlsplit
 
-from relay_intake import DETAIL_LIMIT, extract, valid_date, valid_time
+from relay_intake import DETAIL_LIMIT, valid_date, valid_time
+from relay_interpretation import interpret_notice
 
 ROOT = Path(__file__).resolve().parent
 MEMBERS = ("Alex", "Sam")
@@ -246,7 +247,14 @@ def snapshot(db, household):
                                 location,responsibility,deadline,extraction
                          FROM sources WHERE household=? ORDER BY rowid DESC""",
                       (household,))
-    sources = [{**dict(row), "extraction": json.loads(row["extraction"])} for row in rows]
+    sources = []
+    for row in rows:
+        extraction = json.loads(row["extraction"])
+        model = extraction.pop("_model", None)
+        source = {**dict(row), "extraction": extraction}
+        if model:
+            source["interpretation"] = model
+        sources.append(source)
     source_by_id = {s["id"]: s for s in sources}
     plans = {}
     for row in db.execute("SELECT plan,source FROM versions WHERE household=? ORDER BY rowid", (household,)):
@@ -500,7 +508,7 @@ class RelayHandler(BaseHTTPRequestHandler):
                 source_date = field(data, "sourceDate", 10)
                 if source_date and not valid_date(source_date):
                     raise Problem(400, "Enter a valid date for the original message.")
-                values, evidence = extract(content, member_names(db, household), source_date)
+                values, evidence = interpret_notice(content, member_names(db, household), source_date)
                 first_line = content.strip().splitlines()[0]
                 title = field(data, "title", 160) or values.get("title")
                 if not title:

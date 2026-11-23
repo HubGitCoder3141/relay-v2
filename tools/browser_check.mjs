@@ -244,6 +244,20 @@ try {
   assert.equal(await page.getByRole('dialog').getByLabel('Location',{exact:true}).inputValue(),'the library');
   await capture('plain-notice-review');
   await page.keyboard.press('Escape');
+  await nav.getByRole('link',{name:'Briefing',exact:true}).click();
+  await page.getByRole('button',{name:'Add information',exact:true}).click();
+  await page.getByLabel('Original wording').fill('Hey, soccer practice is Tuesday at 5 PM. Bring cleats and water. Meet Coach Alex at the community field by 4:45.');
+  await page.getByText('Does the message say “tomorrow” or give a date without a year?',{exact:true}).click();
+  await page.getByLabel('Date the message was sent').fill('2026-11-23');
+  await page.getByRole('button',{name:'Create suggestion'}).click();
+  const learnedReview=page.getByRole('dialog');
+  await learnedReview.getByText('Suggested plan type · Sports',{exact:true}).waitFor();
+  assert.equal(await learnedReview.getByLabel('Date',{exact:true}).inputValue(),'2026-11-24');
+  assert.equal(await learnedReview.getByLabel('Time',{exact:true}).inputValue(),'17:00');
+  assert.equal(await learnedReview.getByLabel('Location',{exact:true}).inputValue(),'the community field');
+  assert.equal(await learnedReview.locator('select[name="responsibility"]').inputValue(),'');
+  await capture('learned-notice-review');
+  await page.keyboard.press('Escape');
   for(let index=0;index<120;index++){
     await post(page,'intake',{title:'Synthetic notice '+index,text:'Date: '+today+'\nInstructions: '+('Bring equipment. '.repeat(36))});
   }

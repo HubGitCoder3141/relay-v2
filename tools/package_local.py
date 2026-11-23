@@ -8,7 +8,9 @@ DEST = ROOT / "output" / "relay-local.zip"
 
 
 def build():
-    files = [ROOT / name for name in ("server.py", "relay_intake.py", "index.html", "styles.css", "README.md")]
+    files = [ROOT / name for name in ("server.py", "relay_intake.py", "relay_interpretation.py", "relay_nlu.py",
+                                     "index.html", "styles.css", "README.md", "requirements.txt")]
+    files.extend(sorted((ROOT / "models").glob("*.npz")))
     files.extend(sorted((ROOT / "src").glob("*.mjs")))
     for file in files[:2]:
         ast.parse(file.read_text(encoding="utf-8-sig"))

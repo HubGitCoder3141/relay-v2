@@ -212,14 +212,28 @@ function render(movement){
 const detailLabels = {title:'Plan title', date:'Date', time:'Time', person:'Affected person', preparation:'What to bring', instructions:'Instructions',location:'Location',responsibility:'Responsible person',deadline:'Deadline'};
 const logisticalFields=['location','responsibility','deadline','preparation','instructions'];
 function evidence(s){
- const statuses = {suggested:'Found in source', conflicting:'Conflicting values', invalid:'Check this value', needs_date:'Confirm the date first'};
+ const statuses = {suggested:'Found in source', conflicting:'Conflicting values', invalid:'Check this value', needs_date:'Confirm the date first',
+  needs_context:'Needs more context',low_confidence:'Uncertain suggestion',ambiguous:'Review before scheduling'};
  const lines = Object.entries(s.extraction||{}).map(([key,report]) =>
   '<li><strong>'+esc(detailLabels[key])+'</strong><span>'+esc(statuses[report.status])+'</span>'+
   report.evidence.map(item=>'<p>Line '+item.line+' · '+esc(item.value||'Empty')+'</p>').join('')+
+  (key==='time'&&report.candidate?'<p>Possible start time '+esc(timeLabel(report.candidate))+'.</p>':'')+
+  (Number.isFinite(report.confidence)?'<p>Model score '+Math.round(report.confidence*100)+'%'+(report.inferred?' · Matched to the household roster':'')+'</p>':'')+
   (report.anchor?'<p>Based on message date '+esc(dateLabel(report.anchor))+'.</p>':'')+'</li>');
  const flagged=Object.values(s.extraction||{}).filter(item=>item.status!=='suggested').length;
  const label=flagged?' · '+flagged+' to check':'';
  return lines.length?'<details class="evidence" '+(matchMedia('(min-width:761px)').matches?'open':'')+'><summary>What Relay found'+label+'</summary><ul>'+lines.join('')+'</ul></details>':'';
+}
+function noticeInterpretation(source){
+ const detected=source.interpretation;
+ if(!detected)return '';
+ const kinds={sports:'Sports',homework:'Homework',meeting:'Meeting',appointment:'Appointment',reminder:'Reminder',trip:'Trip',event:'Event'};
+ const warnings={cancel:'This message may cancel a plan. Check the original wording before making a change.',
+  multiple:'This message may contain more than one plan. Review each plan separately.'};
+ const warning=detected.intentConfidence>=.72&&warnings[detected.intent];
+ const kind=detected.kindConfidence>=.72&&kinds[detected.kind];
+ return (warning?'<p class="warning">'+esc(warning)+'</p>':'')+
+  (kind?'<p class="hint">Suggested plan type · '+esc(kind)+'</p>':'');
 }
 function logistics(plan){
  const keys=logisticalFields.filter(key=>plan[key]);
@@ -242,6 +256,7 @@ function review(id){
  const missing=briefing.uncertainties.find(u=>u.sourceId===s.id)?.fields||[];
  openPanel('Review information','<div class="review-workspace"><div class="review-source">'+original(s)+evidence(s)+'</div><div class="review-decision">'+(dup.length?'<p class="warning">This wording already exists in the inbox. Check for a duplicate before approving.</p>':'')+
  '<form id="review" data-id="'+esc(id)+'" novalidate><div class="form-head"><h3>Suggested plan</h3><span class="badge">Awaiting approval</span></div>'+
+ noticeInterpretation(s)+
  (Object.keys(s.extraction||{}).length?'':'<p class="hint">Relay couldn’t extract structured details. Use the original wording to fill in what you know.</p>')+
  (missing.length?'<p class="hint">Check these details against the source: '+esc(missing.join(', '))+'.</p>':'')+
  '<label>Apply this suggestion to<select name="target">'+options(state.plans.map(p=>[p.id,p.title]),s.target,'A new plan')+'</select></label>'+

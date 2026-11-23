@@ -4,7 +4,7 @@
 
 ## Current project state
 
-The invitation-only family release is live at [Relay Production](https://relay-v3-six.vercel.app/). Section 25 records the Actions release and the status of multi-family onboarding. The prototype summary immediately below is historical.
+The invitation-only family release is live at [Relay Production](https://relay-v3-six.vercel.app/). Section 25 records the Actions release and multi-family onboarding status. Section 27 records the trained notice model on protected Preview. The prototype summary immediately below is historical.
 
 The V3 development build supersedes the implementation snapshot immediately below. See §17 for the runtime and open work, and §18 for the Modern Family Home redesign. The original prototype notes and research remain historical context.
 
@@ -458,3 +458,11 @@ The founder reported poor suggested plans and Ask Relay answers. The notice inte
 Ask Relay now refreshes current household data before answering and supports named-person schedules, calendar windows, plan details, due and overdue actions, combined attention, and a follow-up about a single referenced plan. It links answers to recorded sources, plans, and actions. Ambiguous plan names prompt the user to narrow the request. Questions are processed locally in the browser and intake runs on Relay's server with deterministic rules. No model provider was added.
 
 Verified 25 Python tests, 34 JavaScript tests, and a synthetic Edge walkthrough covering the original approval path, natural-message review, fresh answers, follow-ups, and action links. A comparison on six synthetic notices recovered 3 of 26 expected values before the change and 26 after. This fixture comparison does not establish real-world accuracy. Vercel Preview `dpl_3RFHxjTsDdvsaZrPFKNWN2bSmZ24` passed health. Production `dpl_AxwWa9txEznFvhDByMhBNzy9uuzf` served the new assets, returned schema version 6, and rejected anonymous reads and exports. No database migration was needed. Captures include `output/playwright/v3-plain-notice-review.png` and `output/playwright/v3-ask-mobile.png`.
+
+## 27. Trainable notice understanding
+
+Implemented a shared bidirectional GRU with nine contextual span heads and classifiers for plan type and notice intent. PyTorch training uses labeled synthetic examples plus optional JSONL inputs. The bundled NPZ is 225,131 bytes and runs on NumPy in Relay's existing `/api/intake` endpoint. It contains no real household data. The server combines learned role spans with exact source evidence, date and roster validation, confidence thresholds, explicit no-plan guards, and the existing approval step. The model has no external provider, write access, or approval action. Ask Relay's lookup behavior is separate.
+
+Final artifact used 5,642 training examples, nine calibration examples, and ten synthetic evaluation examples. Raw exact-span precision 0.697, recall 0.742, F1 0.719, and warm CPU inference p95 approximately 1.8 ms. The corpus is a development check, not a realistic accuracy estimate. Verified 33 Python tests, 34 JavaScript tests, PyTorch/NumPy export parity, the package build, and an Edge test importing the founder's soccer example. Protected Preview `dpl_FZUfwynT9KjjfmBqsFdmPYLsgVBk` returned schema version 6 and `noticeModelAvailable: true`. Production remains on its earlier family deployment. There was no schema migration or transfer of family data.
+
+Next steps are a larger household-held-out evaluation, better calibration and measurement for rare roles and ambiguous dates, and a comparison against a compact pretrained encoder. See `docs/notice-nlu.md` for training, evaluation, deployment, and fallback. Browser evidence is `output/playwright/v3-learned-notice-review.png`.
