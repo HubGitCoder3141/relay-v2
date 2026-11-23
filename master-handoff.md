@@ -1,8 +1,10 @@
 # RELAY — Complete master project handoff
 
-**Status date:** 2026-11-21. **Purpose:** Preserve Relay's startup discovery, strategy, and current build state for future sessions. The research below records what was said and researched; it is not a validated product specification. The founder is 14 with a $0 starting budget.
+**Status date:** 2026-11-23. **Purpose:** Preserve Relay's startup discovery, strategy, and current build state for future sessions. The research below records what was said and researched; it is not a validated product specification. The founder is 14 with a $0 starting budget.
 
-## Current project state (verified 2026-11-21)
+## Current project state
+
+The invitation-only family release is live at [Relay Production](https://relay-v3-six.vercel.app/). Section 24 records the verified 2026-11-23 update. The prototype summary immediately below is historical.
 
 The V3 development build supersedes the implementation snapshot immediately below. See §17 for the runtime and open work, and §18 for the Modern Family Home redesign. The original prototype notes and research remain historical context.
 
@@ -430,3 +432,13 @@ The founder requested a family-only site without Gmail or Vercel accounts. [Rela
 `api/relay.py` gates production requests to the one pinned family workspace, requires an owner key or single-use invitation, and issues separate Secure HttpOnly browser cookies. `src/app.mjs` presents the private code form. The owner creates and revokes member access from Household access. Member re-entry requires a new invite after signing out or clearing browser storage. No preview data was moved to Production. Changes were deployed directly and remain in the local working tree.
 
 Verification passed 19 Python tests and 30 JavaScript tests. Anonymous HTTPS checks reached the production sign-in page without Vercel authentication and received 401 from state and export. Hosted health reached the separate Supabase database. Live checks verified owner sign-in and reload, invite creation and redemption in a second session, replay rejection, member export denial, revocation and sign-out. The temporary verification member was revoked and removed. The next step is for the founder to sign in with the owner key and create a private invite per family member's browser.
+
+## 24. Family release hardening (2026-11-23)
+
+Code commit `5f5eb2dc7e1689cb8c54d2a40755ab835480528a` was pushed to the private GitHub `origin/main`. The source was uploaded to the protected Vercel Preview (`dpl_6sYxHhCySvKkVdSC2CtPCLHYpL53`) and Production (`dpl_BjiM2bjEUgAVVTsysHRJvV2MM54t`). Production serves the existing family URL. Preview and Production retain separate Postgres resources. Vercel deploys are still explicit source uploads.
+
+The owner can copy a private, single-use invitation link in Household access. The browser removes the link fragment, prefills the code, and asks the recipient to confirm before redeeming it. Hosted Household settings now identify the shared workspace. Owner sessions have random per-browser credentials that expire after 30 days. Sign-out revokes its server-side session. The previous owner cookie requires one sign-in with the existing key. Existing member cookies remain valid until sign-out or revocation. Family state and export use read-only repeatable-read Postgres snapshots without the global write lock.
+
+The production Supabase migrations add the private `family_owner_sessions` table and remove API-role execution privileges from the RLS event-trigger function. Verified table RLS, runtime privileges, anonymous schema denial, and removal of both advisor warnings. The remaining advisor entries are informational and relate to the unused old preview schema inside the production project. The Vercel error/fatal log query returned no groups after the smoke test.
+
+Verification passed 19 Python and 30 JavaScript tests. Preview health returned 200 on its pinned database. Live production tests verified health, anonymous access denial, wrong-code rejection, independent owner sessions, invite redemption and replay denial, member export denial, owner export, and server-side sign-out for both roles. The temporary membership was removed. No managed backup restore drill, long-running load test, or broader public launch was performed. Keep the service family-only while those operational requirements remain open.
