@@ -19,13 +19,13 @@ def account_cookie(token, age):
     return {"Set-Cookie": f"{AUTH_COOKIE}={token}; Secure; HttpOnly; SameSite=Strict; Path=/; Max-Age={age}"}
 
 
-def session_token(headers):
+def session_token(headers, cookie_name=AUTH_COOKIE):
     jar = SimpleCookie()
     try:
         jar.load(headers.get("Cookie", ""))
     except CookieError:
         return ""
-    return jar[AUTH_COOKIE].value if AUTH_COOKIE in jar else ""
+    return jar[cookie_name].value if cookie_name in jar else ""
 
 
 class SupabaseAuth:

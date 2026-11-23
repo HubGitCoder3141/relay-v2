@@ -8,11 +8,19 @@ Local Relay runs as a loopback-only Python HTTP service with SQLite. Run it on o
 python server.py --port 4173
 ```
 
-Relay also has a Vercel-protected preview function in `api/relay.py`. Preview uses the Supabase Marketplace `POSTGRES_URL` and a private `relay_preview` schema. The health endpoint initializes that schema on the pinned preview resource if missing, then checks its version. The function rejects Production requests and does not fall back to SQLite. Vercel authentication must remain enabled for this preview. Use synthetic data. The local and hosted stores are separate.
+Relay runs on Vercel through `api/relay.py`. Preview uses the Supabase Marketplace `POSTGRES_URL` and a private `relay_preview` schema. The health endpoint initializes that schema on the pinned preview resource if missing, then checks its version. Vercel protection remains enabled on previews. Production uses its own pinned Supabase project and private schema. Neither hosted environment falls back to SQLite.
 
 The product needs a Python service, transactional persistence, and session authorization. GitHub Pages can only serve static files.
 
-## Preparing Production
+## Family-only Production
+
+Use `RELAY_PRODUCTION_ENABLED=1` and `RELAY_ACCESS_MODE=family` in Vercel Production with the separate Production `POSTGRES_URL`. Set `RELAY_FAMILY_OWNER_KEY` as a secret generated with `secrets.token_urlsafe(32)`. Keep a private copy for recovery. Apply `supabase/family_owner_sessions.sql` after the base schema and runtime role grants. This migration can run before switching deployments. Standard Vercel protection keeps preview URLs protected while allowing visitors to reach Relay's own sign-in page on its production domain.
+
+The owner key opens the single private workspace. Under **Household → Household access**, the owner or an administrator can issue a named, 24-hour, single-use code or link for each family member's browser. The link carries the code in its URL fragment and the app removes that fragment before rendering. The browser exchanges the code on explicit confirmation and receives a Secure HttpOnly session cookie. Members need a fresh invitation after signing out or clearing their browser cookies. The owner can revoke device access from **Household access**. Owner sessions are independent and expire after 30 days. Changing the owner key and deploying it invalidates prior owner sessions on the new deployment. The owner key is for the owner only.
+
+For each release, verify `/api/health`, confirm anonymous access to `/api/state` and `/api/export` returns 401, then verify sign-in and persistence using the production URL. Keep the previous Vercel deployment available for rollback. The owner can download a private data export through Household settings. The export is readable and portable, with no automated restore workflow. A managed backup and tested restoration process are still required for a broader launch.
+
+## Optional email sign-in
 
 Production expects the separate Supabase project `relay`. The existing Preview credentials remain scoped to Preview.
 

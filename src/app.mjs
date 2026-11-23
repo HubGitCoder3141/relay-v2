@@ -17,6 +17,9 @@ let state, briefing, busy = false, inboxFilter = 'pending', planFilter = '', wee
 let conversation = [], timer, returnFocus, dirty = false, discard = false;
 let signInEmail = '';
 let accountMode = false;
+let familyMode = false;
+let incomingInvite = /^#invite=([A-Za-z0-9_-]{32})$/.exec(location.hash)?.[1] || '';
+if(incomingInvite)history.replaceState(history.state,'',location.pathname+location.search+'#briefing');
 let pendingReconciliation;
 let selectedDay='';
 const pages = { briefing: 'Briefing', plan: 'Family plan', inbox: 'Inbox', ask: 'Ask Relay' };
@@ -307,7 +310,7 @@ function household(){
  if(!state)return;
  const members=state.members.map(name=>'<li>'+personMark(name)+esc(name)+'</li>').join('');
  const role=state.access?.viewer.role||'';
- openPanel('Household','<p>Your workspace is stored on this computer.</p><h3>People in your plans</h3>'+
+ openPanel('Household','<p>'+esc(accountMode?'Your household is shared with the people you invite.':'Your workspace is stored on this computer.')+'</p><h3>People in your plans</h3>'+
  (members?'<ul class="members">'+members+'</ul>':'<p class="hint">Add a name to identify who a message or plan concerns.</p>')+
  (role==='owner'||role==='admin'?'<form id="member" novalidate><label>Name<input name="name" maxlength="80" required></label><p class="error" role="alert"></p><div class="actions"><button class="btn secondary">Add family member</button></div></form>':'')+
  '<div class="data-actions">'+button('access','Household access','btn secondary')+
@@ -315,6 +318,13 @@ function household(){
  (accountMode?button('account-signout','Sign out','btn secondary'):'')+'</div>');
 }
 const roleLabels={owner:'Owner',admin:'Administrator',member:'Adult member'};
+function invitationDetails(code){
+ const link=familyMode?location.origin+'/#invite='+encodeURIComponent(code):'';
+ return '<div class="invite-code"><label>One-time invitation code<input readonly value="'+esc(code)+'"></label>'+
+ (link?'<label>Invitation link<input id="invite-link" readonly value="'+esc(link)+'"></label>'+
+ button('copy-invite','Copy invitation link','btn secondary'):'')+
+ '<p>Share privately. The invitation works on one browser and expires in 24 hours.</p></div>';
+}
 function accessPanel(code=''){
  const access=state.access;
  if(!access)return;
@@ -323,10 +333,10 @@ function accessPanel(code=''){
  const rows=people.map(person=>'<li><div><strong>'+esc(person.name)+'</strong><span>'+roleLabels[person.role]+(person.id===viewer.id?' · You':'')+'</span></div>'+
   (viewer.role==='owner'&&person.role!=='owner'?'<div class="access-actions">'+button('access-role',person.role==='admin'?'Make adult member':'Make administrator','small','',person.id)+button('access-remove','Remove access','small','',person.id)+'</div>':'')+'</li>').join('');
  openPanel('Household access','<p>Adults with access can read the household plan and review incoming information.</p><ul class="access-list">'+rows+'</ul>'+
- (code?'<div class="invite-code"><label>One-time invitation code<input readonly value="'+esc(code)+'"></label><p>Share this code privately. It expires in 24 hours and Relay displays it once.</p></div>':'')+
+ (code?invitationDetails(code):'')+
  (manager?'<h3>Invite an adult</h3><form id="invite" novalidate><label>Name<input name="name" maxlength="80" required></label><p class="error" role="alert"></p><div class="actions"><button class="btn primary">Create invitation</button></div></form>'+
   (invites.length?'<h3>Pending invitations</h3><ul class="access-list">'+invites.map(invite=>'<li><strong>'+esc(invite.name)+'</strong>'+button('revoke-invite','Revoke invitation','small','',invite.id)+'</li>').join('')+'</ul>':''):'')+
- (viewer.role==='owner'?button('join','Join another household','btn secondary'):''));
+ (viewer.role==='owner'&&!familyMode?button('join','Join another household','btn secondary'):''));
 }
 function joinPanel(){
  openPanel('Join a household','<p>Enter the private code from a household owner or administrator. If this browser already has household records, use a fresh browser profile.</p><form id="join" novalidate><label>Invitation code<input name="code" maxlength="80" required autocomplete="off"></label><p class="error" role="alert"></p><div class="actions"><button class="btn primary">Join household</button></div></form>');
@@ -348,7 +358,7 @@ async function save(path,data,after,onError){
  try{state=await api(path,data);dirty=false;busy=false;dialog.close();render();after();}
  catch(err){
   try{
-   if(err.code==='sign_in_required'){showSignIn();return;}
+   if(err.code==='sign_in_required'||err.code==='family_sign_in_required'||err.code==='access_removed'&&familyMode){showSignIn();return;}
    if(onError&&await onError(err))return;
    showError(err);
   }
@@ -356,19 +366,24 @@ async function save(path,data,after,onError){
  }
  finally{busy=false;dialog.removeAttribute('aria-busy');content.querySelectorAll('button,input,textarea,select').forEach(e=>e.disabled=false);}
 }
-function showSignIn(stage='email'){
+function showSignIn(stage=familyMode?'family':'email'){
  state=undefined;
  conversation=[];
+ document.title='Sign in · Relay';
+ document.querySelector('#nav-count').textContent='';
+ document.querySelectorAll('nav [aria-current]').forEach(link=>link.removeAttribute('aria-current'));
  if(dialog.open)dialog.close();
  const code=stage==='code';
+ const family=stage==='family';
  main.innerHTML='<section class="account-entry"><h1>Sign in to Relay</h1><p>'+
-  (code?'Enter the code sent to '+esc(signInEmail)+'.':'Use your email to open your household.')+
+  (family?(incomingInvite?'Your invitation is ready. Join to see your family’s plans.':'Enter your owner key or a private invitation from your household.'):code?'Enter the code sent to '+esc(signInEmail)+'.':'Use your email to open your household.')+
   '</p><form id="account-form" data-stage="'+stage+'"><label>'+
-  (code?'Email code<input name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="8" required>'
+  (family?'Private code<input name="code" type="password" autocomplete="off" maxlength="80" required value="'+esc(incomingInvite)+'">'
+       :code?'Email code<input name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="8" required>'
        :'Email<input name="email" type="email" autocomplete="email" maxlength="254" required value="'+esc(signInEmail)+'">')+
   '</label><p class="error" role="alert"></p><div class="actions">'+
   (code?button('account-email','Change email','btn secondary'):'')+
-  '<button class="btn primary">'+(code?'Sign in':'Send code')+'</button></div></form></section>';
+  '<button class="btn primary">'+(family&&incomingInvite?'Join household':family||code?'Sign in':'Send code')+'</button></div></form></section>';
  main.querySelector('input').focus();
 }
 async function submitAccount(form,data){
@@ -376,7 +391,11 @@ async function submitAccount(form,data){
  const submit=form.querySelector('button[type="submit"],button:not([type])');
  submit.disabled=true;
  try{
-  if(form.dataset.stage==='email'){
+  if(form.dataset.stage==='family'){
+   await api('join',{code:data.code});
+   incomingInvite='';
+   await start();
+  }else if(form.dataset.stage==='email'){
    signInEmail=data.email.trim();
    await api('auth',{action:'request',email:signInEmail});
    showSignIn('code');
@@ -427,7 +446,15 @@ document.addEventListener('click',async e=>{
  switch(el.dataset.action){
  case 'retry':return start();
  case 'account-email':return showSignIn();
+ case 'copy-invite':{
+  const input=content.querySelector('#invite-link');
+  if(!input)return;
+  try{await navigator.clipboard.writeText(input.value);notify('Invitation link copied.');}
+  catch{input.select();notify('Invitation link selected. Copy it to share.');}
+  return;
+ }
  case 'account-signout':
+  if(familyMode&&state?.access?.viewer.role!=='owner'&&!confirm('Sign out on this device? You will need a new invitation to sign in again.'))return;
   try{await api('auth',{action:'signout'});showSignIn();}catch(error){notify(error.message);}
   return;
  case 'reconcile':return reconcileDraft();
@@ -464,12 +491,14 @@ document.addEventListener('click',async e=>{
 });
 window.addEventListener('hashchange',()=>{if(!state)return;render('route');if(!dialog.open){main.focus({preventScroll:true});window.scrollTo(0,0);}});
 async function start(){
- try{state=await api('state');accountMode=Boolean(state.accountMode);render();}
+ try{state=await api('state');accountMode=Boolean(state.accountMode);familyMode=Boolean(state.familyMode);incomingInvite='';render();}
  catch(err){
-  if(err.code==='sign_in_required'){
+  if(err.code==='sign_in_required'||err.code==='family_sign_in_required'){
    accountMode=true;
+   familyMode=err.code==='family_sign_in_required';
    showSignIn();
   }else if(err.code==='access_removed'){
+   if(familyMode)return showSignIn();
    state=undefined;
    main.innerHTML=empty('Household access removed','You can join again with a new invitation.')+button('join','Join a household','btn primary');
   }else main.innerHTML=empty('Briefing unavailable','Check the connection to the Relay server and try again.')+button('retry','Try again','btn primary');

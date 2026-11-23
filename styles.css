@@ -109,6 +109,7 @@ dialog:has(.review-workspace) #dialog-content { scroll-padding-top:96px; }
 .access-actions button,.access-list>li>.small { min-height:42px; }
 .invite-code { background:var(--evidence); padding:16px; margin-bottom:22px; }
 .invite-code p { margin-bottom:0; }
+.invite-code label + label,.invite-code .btn { margin-top:12px; }
 @media(max-width:760px){
   .top { padding-inline:18px; }
   .top nav { display:grid; grid-column:1/-1; grid-row:2; grid-template-columns:repeat(4,minmax(0,1fr)); }

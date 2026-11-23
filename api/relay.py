@@ -2,18 +2,24 @@
 import os
 import re
 from contextlib import closing
+from hmac import compare_digest
 from pathlib import Path
+from secrets import token_urlsafe
+from time import time
 from urllib.parse import parse_qs, unquote, urlsplit
 
 import psycopg
 from psycopg.rows import dict_row
 
 from relay_auth import SupabaseAuth, account_cookie, session_token
-from server import MIGRATIONS, Problem, RelayHandler, field
+from server import MIGRATIONS, Problem, RelayHandler, field, session_hash
 
 SCHEMA_FILE = Path(__file__).resolve().parent.parent / "supabase" / "relay_preview.sql"
 PREVIEW_PROJECT = "qemqfiofozmxesdiikxv"
 PRODUCTION_PROJECT = "tryyihbuzexsgvrfeuwn"
+FAMILY_OWNER_ID = "relay-family-owner"
+FAMILY_HOUSEHOLD_HASH = session_hash("relay-private-family-household")
+OWNER_SESSION_SECONDS = 30 * 86400
 
 class PostgresSession:
     def __init__(self, url, project):
@@ -55,6 +61,22 @@ class handler(RelayHandler):
     def production(self):
         return os.environ.get("VERCEL_ENV") == "production"
 
+    @property
+    def family_mode(self):
+        return self.production and os.environ.get("RELAY_ACCESS_MODE") == "family"
+
+    def family_owner_key(self):
+        key = os.environ.get("RELAY_FAMILY_OWNER_KEY", "")
+        if not re.fullmatch(r"[A-Za-z0-9_-]{43,64}", key):
+            raise Problem(503, "The private household has not been configured.")
+        return key
+
+    def family_key_hash(self):
+        return session_hash("relay-family-key:" + self.family_owner_key())
+
+    def family_token(self):
+        return session_token(self.headers, self.cookie_name)
+
     def serve(self, post):
         url = urlsplit(self.path)
         if url.path in ("/api/relay", "/api/relay.py"):
@@ -80,6 +102,9 @@ class handler(RelayHandler):
         return PostgresSession(url, PRODUCTION_PROJECT if self.production else PREVIEW_PROJECT)
 
     def begin_database(self, db, write):
+        if self.family_mode and urlsplit(self.path).path in ("/api/state", "/api/export", "/api/health"):
+            db.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
+            write = False
         db.execute("SET LOCAL search_path = relay_production, pg_catalog" if self.production
                    else "SET LOCAL search_path = relay_preview, pg_catalog")
         db.execute("SET LOCAL statement_timeout = '5s'")
@@ -98,6 +123,8 @@ class handler(RelayHandler):
                     if statement.strip():
                         db.execute(statement)
             actual = db.execute("SELECT MAX(version) AS version FROM schema_version").fetchone()["version"]
+            if self.family_mode:
+                db.execute("SELECT 1 FROM family_owner_sessions LIMIT 1").fetchone()
         if actual != MIGRATIONS[-1][0]:
             raise Problem(503, "The preview database schema needs an update.")
         return {"status": "ok", "database": "postgres", "schemaVersion": actual}
@@ -107,6 +134,20 @@ class handler(RelayHandler):
 
     def api(self, path, post):
         if not self.production:
+            return super().api(path, post)
+        if self.family_mode:
+            self.family_owner_key()
+            if path == "/api/auth" and post:
+                if self.read_json().get("action") != "signout":
+                    raise Problem(400, "Unknown sign-in action.")
+                if self.family_token():
+                    with closing(self.open_database()) as db, db:
+                        self.begin_database(db, True)
+                        self.revoke_family_session(db)
+                self.json_response(200, {"stage": "family"}, self.session_headers(""))
+                return
+            if path not in ("/api/health", "/api/join") and not self.family_token():
+                raise Problem(401, "Enter your private Relay code.", code="family_sign_in_required")
             return super().api(path, post)
         if path == "/api/auth" and post:
             return self.account_action()
@@ -148,6 +189,22 @@ class handler(RelayHandler):
         self.json_response(200, {"stage": "signed_in"}, account_cookie(token, 3600))
 
     def session(self, db):
+        if self.family_mode:
+            token = self.family_token()
+            if not token:
+                return None
+            if re.fullmatch(r"owner_[A-Za-z0-9_-]{43}", token):
+                return db.execute("""SELECT a.* FROM household_access a
+                    WHERE a.id=? AND EXISTS (SELECT 1 FROM family_owner_sessions
+                    WHERE token_hash=? AND key_hash=? AND expires>?)""",
+                    (FAMILY_OWNER_ID, session_hash(token), self.family_key_hash(), int(time()))).fetchone()
+            viewer = super().session(db)
+            if viewer and not db.execute("SELECT 1 FROM households WHERE id=? AND session_hash=?",
+                                         (viewer["household"], FAMILY_HOUSEHOLD_HASH)).fetchone():
+                return None
+            if viewer and viewer["role"] == "owner":
+                return None
+            return viewer
         if not self.production:
             return super().session(db)
         return db.execute(
@@ -164,16 +221,55 @@ class handler(RelayHandler):
         )
 
     def household(self, db, allow_create):
+        if self.family_mode:
+            viewer = self.session(db)
+            if not viewer:
+                raise Problem(401, "Enter your private Relay code.", code="family_sign_in_required")
+            if not viewer["active"]:
+                raise Problem(401, "Access to this household was removed.", code="access_removed")
+            return viewer, {}
         viewer, headers = super().household(db, allow_create)
         if self.production and allow_create:
             self.bind_account(db, viewer)
         return viewer, headers
 
     def join(self, db, data):
+        if self.family_mode:
+            code = field(data, "code", 80, required=True)
+            if code.isascii() and compare_digest(code, self.family_owner_key()):
+                return self.join_family_owner(db)
+            if not db.execute("""SELECT 1 FROM household_invites i JOIN households h ON i.household=h.id
+                                 WHERE i.code_hash=? AND h.session_hash=?""",
+                              (session_hash(code), FAMILY_HOUSEHOLD_HASH)).fetchone():
+                raise Problem(404, "This invitation is invalid, expired, or already used.")
+            return super().join(db, data)
         viewer, headers = super().join(db, data)
         if self.production:
             self.bind_account(db, viewer)
         return viewer, headers
+
+    def join_family_owner(self, db):
+        viewer = db.execute("SELECT * FROM household_access WHERE id=?", (FAMILY_OWNER_ID,)).fetchone()
+        if viewer is None:
+            household = db.execute("INSERT INTO households(session_hash) VALUES (?) RETURNING id",
+                                   (FAMILY_HOUSEHOLD_HASH,)).fetchone()["id"]
+            db.execute("INSERT INTO household_access VALUES (?,?,?,?,?,1)",
+                       (FAMILY_OWNER_ID, household, "Workspace owner", session_hash(token_urlsafe(32)), "owner"))
+            viewer = db.execute("SELECT * FROM household_access WHERE id=?", (FAMILY_OWNER_ID,)).fetchone()
+        token = "owner_" + token_urlsafe(32)
+        now = int(time())
+        key_hash = self.family_key_hash()
+        db.execute("DELETE FROM family_owner_sessions WHERE expires<=? OR key_hash<>?", (now, key_hash))
+        db.execute("INSERT INTO family_owner_sessions VALUES (?,?,?)",
+                   (session_hash(token), key_hash, now + OWNER_SESSION_SECONDS))
+        return viewer, self.session_headers(token)
+
+    def revoke_family_session(self, db):
+        viewer = self.session(db)
+        if viewer and viewer["role"] == "owner":
+            db.execute("DELETE FROM family_owner_sessions WHERE token_hash=?", (session_hash(self.family_token()),))
+        elif viewer and viewer["active"]:
+            db.execute("UPDATE household_access SET active=0 WHERE id=?", (viewer["id"],))
 
     def demo_enabled(self):
         return False
@@ -181,13 +277,20 @@ class handler(RelayHandler):
     def decorate_state(self, state):
         if self.production:
             state["accountMode"] = True
+            if self.family_mode:
+                state["familyMode"] = True
         return state
 
     @property
     def cookie_name(self):
+        if self.family_mode:
+            return "__Host-relay_family"
         return "__Host-relay_preview"
 
     def session_headers(self, token):
+        if self.family_mode:
+            lifetime = (OWNER_SESSION_SECONDS if token.startswith("owner_") else 31536000) if token else 0
+            return {"Set-Cookie": f"{self.cookie_name}={token}; Secure; HttpOnly; SameSite=Strict; Path=/; Max-Age={lifetime}"}
         if self.production:
             return {}
         return {"Set-Cookie": f"{self.cookie_name}={token}; Secure; HttpOnly; SameSite=Strict; Path=/; Max-Age=86400"}
