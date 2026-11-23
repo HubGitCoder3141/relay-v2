@@ -249,6 +249,15 @@ class HouseholdAPI(unittest.TestCase):
         self.assertEqual(draft["extraction"]["deadline"]["status"], "invalid")
         self.assertEqual(draft["extraction"]["responsibility"]["status"], "invalid")
 
+    def test_notice_anchor_is_validated_and_stored_with_evidence(self):
+        text = "Chess club is on tomorrow at 4 pm at the library.\nPlease bring a board."
+        self.post("intake", {"text": text, "sourceDate": "2026-02-30"}, 400)
+        draft = self.post("intake", {"text": text, "sourceDate": "2026-11-29"})["sources"][0]
+        self.assertEqual((draft["text"], draft["title"], draft["date"], draft["location"]),
+                         (text, "Chess club", "2026-11-30", "the library"))
+        self.assertEqual(draft["extraction"]["date"]["anchor"], "2026-11-29")
+        self.assertEqual(self.request("GET", "/api/state", self.cookie)[1]["sources"][0], draft)
+
     def test_invite_redeem_promote_remove_and_scope(self):
         invite = self.post("access", {"action": "invite", "name": "Jordan"})
         _, foreign = self.new_household()

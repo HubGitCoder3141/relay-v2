@@ -2,7 +2,7 @@
 
 ## V3 implementation
 
-`relay_intake.py` parses explicit source lines using the current household roster. It records the original line number and value alongside the extraction status. Contradictory inputs remain blank in the suggested plan until a reviewer chooses a value. The approved preparation and instructions join each plan version. A revision requires the current approved source ID inside the write transaction. Structured retrieval reads the newest approved version and returns its source ID.
+`relay_intake.py` reads labeled fields and common notice sentences using the current household roster. It records the source line and value with each suggestion. The optional original message date lets Relay resolve words such as “tomorrow” and nearby dates without a year. Review shows the date used for that interpretation. Relay keeps event dates and response deadlines separate, skips recognized email headers and quoted messages, and leaves conflicting or canceled schedules open for review. Preparation and instructions travel with the approved version. A revision checks the latest approved source ID inside the write transaction.
 
 Prioritize a synthetic evaluation corpus with conflicting versions, unseen names, missed obligations, layout variants, and expected abstentions. Treat source revision and authority as part of retrieval evaluation alongside citation validity. [Attribute or Abstain](https://aclanthology.org/2024.emnlp-main.463/)
 
@@ -43,10 +43,10 @@ The browser and test runner import the same module from `src/intelligence.mjs`.
 | `buildBriefing(state, today?)` | Projects today, upcoming plans, pending review, missing fields on pending sources, exact-time conflicts, latest field changes, and open/completed follow-through actions. |
 | `describeChanges(previous, current)` | Returns before and after values for title, date, time and person. |
 | `findDuplicates(state, source)` | Returns other notices with identical original wording after case and whitespace normalization. Preserves punctuation and all originals. |
-| `answerQuestion(state, question, today?)` | Recognizes a bounded set of full question patterns. Supports today, tomorrow, changes, conflicts, pending review and affected people by plan-title words. Returns status, plain text, plan IDs and source IDs. |
+| `answerQuestion(state, question, today?, previousPlanId?)` | Looks up dates and named people, plan details and responsibility, due and overdue work, changes, conflicts, and pending review. A follow-up can refer to a single previously cited plan. Names that match multiple plans return choices. Answers return the IDs of plans, sources, and actions they use. |
 | `modelCapabilities` and `interpretSource(request)` | The capability flag is false. The asynchronous boundary returns an unavailable reason and an empty candidate list. No provider, key, model, transport or inference call exists. |
 
-Conflicts require the same nonempty person, date and time on two current plans. This catches a child scheduled for two simultaneous activities. Duration, travel time, caregiver availability, time zones and undated obligations require additional evidence. Blank-field results describe missing recorded information. They do not assign confidence scores or imply a source is wrong. Schedule lookups operate on approved titles and fields. They cannot interpret a notice or answer broad questions about its meaning.
+Conflicts require the same nonempty person, date and time on two current plans. This catches a child scheduled for two simultaneous activities. Duration, travel time, caregiver availability, time zones and undated obligations require additional evidence. Schedule lookups use approved titles and fields, and Ask Relay refreshes the scoped household state before answering. Questions are evaluated in the browser. The supported language and notice formats are covered by synthetic tests rather than an accuracy benchmark from real families.
 
 ## Trust and future execution
 

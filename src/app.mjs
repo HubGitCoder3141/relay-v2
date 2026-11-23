@@ -179,9 +179,21 @@ function inbox(){
   '<div class="filters">'+['pending','approved','rejected'].map(s=>'<button data-action="inbox-filter" data-id="'+s+'" aria-pressed="'+(s===inboxFilter)+'">'+({pending:'Needs review',approved:'Approved',rejected:'Rejected'}[s])+' <b>'+state.sources.filter(x=>x.status===s).length+'</b></button>').join('')+'</div><div class="review-sheet">'+(rows.length?rows.map(sourceRow).join(''):empty('Nothing here yet','Information with this review status appears here.'))+'</div>';
 }
 function ask(){
- const prompts=['What is happening this week?','What should we prepare?','What changed?','Any conflicts?','What needs review?'];
- return titleBlock('Ask Relay','Look up reviewed plans, changes, and information still awaiting review.')+
- '<section class="ask-panel"><div class="askintro"><h2>Saved household records</h2><p>Relay uses rule-based lookups. Each answer points back to a plan or source.</p></div><div class="ask-work"><div class="prompts">'+prompts.map(p=>button('prompt',esc(p),'small','',p)).join('')+'</div><div id="answers" role="log">'+conversation.map(a=>'<article><span class="eyebrow">YOUR QUESTION</span><h3>'+esc(a.question)+'</h3><p>'+esc(a.text)+'</p><div class="citations">'+a.planIds.map(id=>state.plans.find(p=>p.id===id)).filter(Boolean).map(p=>button('detail',esc(p.title),'small','calendar',p.id)).join('')+a.sourceIds.map(id=>state.sources.find(s=>s.id===id)).filter(Boolean).map(s=>button('source','Source · '+esc(s.title),'small','mail',s.id)).join('')+'</div></article>').join('')+'</div><form id="ask-form" novalidate><label for="question">Ask about your family plan</label><div class="ask-input"><input id="question" name="question" maxlength="500" placeholder="What changed?" required><button class="btn primary">Ask '+icon('arrow')+'</button></div><p class="error" role="alert"></p></form></div></section>';
+ const prompts=['What is happening this week?','What should we prepare?','What’s due today?','What changed?','Any conflicts?'];
+ const answers=conversation.map(answer=>{
+  const plans=answer.planIds.map(id=>state.plans.find(plan=>plan.id===id)).filter(Boolean);
+  const sources=answer.sourceIds.map(id=>state.sources.find(source=>source.id===id)).filter(Boolean);
+  const tasks=(answer.taskIds||[]).map(id=>state.tasks.find(task=>task.id===id)).filter(Boolean);
+  const citations=plans.map(p=>button('detail',esc(p.title),'small','calendar',p.id)).join('')+
+   sources.map(s=>button('source','Source · '+esc(s.title),'small','mail',s.id)).join('')+
+   tasks.map(t=>button('edit-task','Action · '+esc(t.title),'small','check',t.id)).join('');
+  return '<article><h3>'+esc(answer.question)+'</h3><p>'+esc(answer.text)+'</p>'+
+   (citations?'<div class="citations">'+citations+'</div>':'')+'</article>';
+ }).join('');
+ return titleBlock('Ask Relay','Find the details your family already saved.')+
+ '<section class="ask-panel"><div class="askintro"><h2>Household lookup</h2><p>Ask about a plan by name, what’s due, or someone’s schedule. Open the linked records to check an answer.</p></div><div class="ask-work">'+
+ '<div class="prompts">'+prompts.map(p=>button('prompt',esc(p),'small','',p)).join('')+'</div><div id="answers" role="log">'+answers+'</div>'+
+ '<form id="ask-form" novalidate><label for="question">Ask about your family plan</label><div class="ask-input"><input id="question" name="question" maxlength="500" placeholder="Where is soccer practice?" required><button class="btn primary">Ask '+icon('arrow')+'</button></div><p class="error" role="alert"></p></form></div></section>';
 }
 function render(movement){
  const key=page();document.title='Relay · '+pages[key];
@@ -203,7 +215,8 @@ function evidence(s){
  const statuses = {suggested:'Found in source', conflicting:'Conflicting values', invalid:'Check this value', needs_date:'Confirm the date first'};
  const lines = Object.entries(s.extraction||{}).map(([key,report]) =>
   '<li><strong>'+esc(detailLabels[key])+'</strong><span>'+esc(statuses[report.status])+'</span>'+
-  report.evidence.map(item=>'<p>Line '+item.line+' · '+esc(item.value||'Empty')+'</p>').join('')+'</li>');
+  report.evidence.map(item=>'<p>Line '+item.line+' · '+esc(item.value||'Empty')+'</p>').join('')+
+  (report.anchor?'<p>Based on message date '+esc(dateLabel(report.anchor))+'.</p>':'')+'</li>');
  const flagged=Object.values(s.extraction||{}).filter(item=>item.status!=='suggested').length;
  const label=flagged?' · '+flagged+' to check':'';
  return lines.length?'<details class="evidence" '+(matchMedia('(min-width:761px)').matches?'open':'')+'><summary>What Relay found'+label+'</summary><ul>'+lines.join('')+'</ul></details>':'';
@@ -219,7 +232,7 @@ function original(s){return '<div class="original"><div class="eyebrow">'+icon('
 function field(label,name,type,value='',required=false){return '<label>'+label+'<input type="'+type+'" name="'+name+'" value="'+esc(value)+'" '+(required?'required':'')+(type==='text'?' maxlength="160"':'')+'></label>';}
 function options(values,value,blank){return '<option value="">'+blank+'</option>'+values.map(([id,label])=>'<option value="'+esc(id)+'"'+(id===value?' selected':'')+'>'+esc(label)+'</option>').join('');}
 function intake(){
- openPanel('Add information','<p>Paste a message, email, or notice, then check the suggestion before approving it.</p><form id="intake" novalidate>'+field('Short title (optional)','title','text')+'<label>Original wording<textarea name="text" rows="6" maxlength="12000" required autofocus placeholder="Paste the message as you received it…"></textarea></label><p class="hint">Relay reads recognized lines such as When, Where, For, and Please bring. Enter unclear details during review.</p><p class="error" role="alert"></p><div class="actions"><button class="btn primary">Create suggestion '+icon('arrow')+'</button></div></form>');
+ openPanel('Add information','<p>Paste a message, email, or notice, then check the suggestion before approving it.</p><form id="intake" novalidate>'+field('Short title (optional)','title','text')+'<label>Original wording<textarea name="text" rows="6" maxlength="12000" required autofocus placeholder="Paste the message as you received it…"></textarea></label><details><summary>Does the message say “tomorrow” or give a date without a year?</summary>'+field('Date the message was sent','sourceDate','date')+'<p class="hint">Use the original sent date so Relay can resolve relative dates.</p></details><p class="error" role="alert"></p><div class="actions"><button class="btn primary">Create suggestion '+icon('arrow')+'</button></div></form>');
 }
 function review(id){
  const s=state.sources.find(x=>x.id===id);if(!s)return;
@@ -372,11 +385,30 @@ function removeAccess(id){
  if(!person)return;
  openPanel('Remove household access?', '<p>'+esc(person.name)+' will no longer be able to open or change this household’s records.</p><p class="error" role="alert"></p><div class="actions"><button class="btn secondary" data-action="access" autofocus>Keep access</button>'+button('confirm-remove','Remove access','btn danger','',id)+'</div>');
 }
-function askQuestion(q){
- if(!q.trim())return;
- const result=answerQuestion(state,q.trim(),dateKey(now()));
- conversation.push({...result,question:q.trim()});render();
- const last=document.querySelector('#answers article:last-child');if(last){last.tabIndex=-1;last.focus();}
+async function askQuestion(q){
+ if(!q.trim()||busy)return;
+ busy=true;
+ const form=main.querySelector('#ask-form');
+ const submit=form?.querySelector('button');
+ if(submit)submit.disabled=true;
+ form?.setAttribute('aria-busy','true');
+ try{
+  const latest=await api('state');
+  if(page()!=='ask')return;
+  state=latest;
+  const previous=conversation.at(-1);
+  const focus=previous?.planIds.length===1&&!previous.taskIds?.length?previous.planIds[0]:'';
+  const result=answerQuestion(state,q.trim(),dateKey(now()),focus);
+  conversation.push({...result,question:q.trim()});render();
+  const last=document.querySelector('#answers article:last-child');if(last){last.tabIndex=-1;last.focus();}
+ }catch(error){
+  if(/^(?:family_sign_in_required|sign_in_required|household_setup_required|access_removed)$/.test(error.code||''))await start();
+  else if(form?.isConnected)form.querySelector('.error').textContent='Couldn’t refresh your household records. Try asking again.';
+ }finally{
+  busy=false;
+  if(submit)submit.disabled=false;
+  form?.removeAttribute('aria-busy');
+ }
 }
 function showError(err){const node=content.querySelector('.error')||main.querySelector('.error');if(node)node.textContent=err.message;else notify(err.message);}
 async function save(path,data,after,onError){

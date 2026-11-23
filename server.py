@@ -383,8 +383,12 @@ class RelayHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'")
         for name, value in (extra or {}).items():
             self.send_header(name, value)
-        self.end_headers()
-        self.wfile.write(body)
+        try:
+            self.end_headers()
+            self.wfile.write(body)
+        except ConnectionError:
+            # A browser leaving during an update cannot receive the response.
+            return
 
     def json_response(self, status, value, headers=None):
         self.respond(status, json.dumps(value, ensure_ascii=False).encode("utf-8"),
@@ -493,7 +497,10 @@ class RelayHandler(BaseHTTPRequestHandler):
             created_source = None
             if path == "/api/intake":
                 content = field(data, "text", 12000, required=True, preserve=True)
-                values, evidence = extract(content, member_names(db, household))
+                source_date = field(data, "sourceDate", 10)
+                if source_date and not valid_date(source_date):
+                    raise Problem(400, "Enter a valid date for the original message.")
+                values, evidence = extract(content, member_names(db, household), source_date)
                 first_line = content.strip().splitlines()[0]
                 title = field(data, "title", 160) or values.get("title")
                 if not title:

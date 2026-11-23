@@ -71,6 +71,13 @@ try {
   await nav.getByRole('link', {name:'Ask Relay'}).click();
   await page.getByRole('button', {name:'What should we prepare?'}).click();
   await page.getByText('Community garden · Gloves and water · Meet at the east gate').waitFor();
+  const question=page.getByRole('textbox',{name:'Ask about your family plan'});
+  await question.fill('Where is the community garden?');
+  await question.press('Enter');
+  await page.getByText(/Location · Community center/).waitFor();
+  await question.fill('Who’s responsible for it?');
+  await question.press('Enter');
+  await page.getByText(/Responsible person · Morgan/).waitFor();
   await capture('ask-mobile');
   await nav.getByRole('link', {name:'Family plan'}).click();
   await page.getByRole('button', {name:/Community garden/}).click();
@@ -172,6 +179,11 @@ try {
   await taskEditor.getByLabel('Due date').fill(today);
   await taskEditor.getByLabel('Who will handle it?').selectOption('Casey');
   await taskEditor.getByRole('button',{name:'Add action',exact:true}).click();
+  await page.locator('[data-action-group="today"]').getByRole('button',{name:'Return library books',exact:true}).waitFor();
+  await nav.getByRole('link',{name:'Ask Relay',exact:true}).click();
+  await page.getByRole('button',{name:'What’s due today?',exact:true}).click();
+  await page.getByRole('button',{name:'Action · Return library books',exact:true}).waitFor();
+  await nav.getByRole('link',{name:'Actions',exact:true}).click();
   await page.locator('[data-action-group="today"]').getByRole('button',{name:'Return library books',exact:true}).click();
   await taskEditor.getByLabel('Due date').fill(tomorrow);
   await taskEditor.getByRole('button',{name:'Save changes',exact:true}).click();
@@ -221,6 +233,17 @@ try {
   await day.press('Space');
   assert.equal(await day.getAttribute('aria-pressed'),'false');
   assert.equal(await activeMotion(),false);
+  await page.getByRole('button',{name:'Add information',exact:true}).click();
+  await page.getByLabel('Original wording').fill('Book club is on tomorrow at 4 pm at the library. Please bring a book.');
+  await page.getByText('Does the message say “tomorrow” or give a date without a year?',{exact:true}).click();
+  await page.getByLabel('Date the message was sent').fill(today);
+  await page.getByRole('button',{name:'Create suggestion'}).click();
+  const inferredDate=page.getByRole('dialog').getByLabel('Date',{exact:true});
+  await inferredDate.waitFor();
+  assert.equal(await inferredDate.inputValue(),tomorrow);
+  assert.equal(await page.getByRole('dialog').getByLabel('Location',{exact:true}).inputValue(),'the library');
+  await capture('plain-notice-review');
+  await page.keyboard.press('Escape');
   for(let index=0;index<120;index++){
     await post(page,'intake',{title:'Synthetic notice '+index,text:'Date: '+today+'\nInstructions: '+('Bring equipment. '.repeat(36))});
   }

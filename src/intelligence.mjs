@@ -111,9 +111,142 @@ function planAnswer(plans, emptyMessage) {
   return response('answered', lines.join('\n'), plans);
 }
 
+const weekdays = ['sunday','monday','tuesday','wednesday','thursday','friday','saturday'];
+const monthNames = ['january','february','march','april','may','june','july','august','september','october','november','december'];
+const displayFields = {
+  date:'Date', time:'Start time', location:'Location', person:'Person listed',
+  responsibility:'Responsible person', preparation:'What to bring', deadline:'Deadline', instructions:'Instructions'
+};
+
+function dateScope(phrase, today) {
+  if (phrase === 'today') return [today, nextDay(today)];
+  if (phrase === 'tomorrow') return [nextDay(today), nextDay(today, 2)];
+  if (phrase === 'this week' || phrase === 'next seven days') return [today, nextDay(today, 7)];
+  const weekday = new Date(today + 'T00:00:00Z').getUTCDay();
+  if (phrase === 'this weekend') {
+    const saturday = weekday === 0 ? nextDay(today, -1) : nextDay(today, 6 - weekday);
+    return [today > saturday ? today : saturday, nextDay(saturday, 2)];
+  }
+  if (phrase === 'next week') {
+    const monday = nextDay(today, 7 - (weekday + 6) % 7);
+    return [monday, nextDay(monday, 7)];
+  }
+  const index = weekdays.indexOf(phrase);
+  if (index >= 0) {
+    const date = nextDay(today, (index - weekday + 7) % 7);
+    return [date, nextDay(date)];
+  }
+  if (/^\d{4}-\d{2}-\d{2}$/u.test(phrase)) {
+    const parsed = new Date(phrase + 'T00:00:00Z');
+    if (!Number.isNaN(parsed.valueOf()) && parsed.toISOString().slice(0,10) === phrase) return [phrase, nextDay(phrase)];
+  }
+  const monthDay = /^([a-z]+) (\d{1,2})(?:st|nd|rd|th)?(?:,? (\d{4}))?$/u.exec(phrase);
+  if (monthDay) {
+    const month = monthNames.findIndex(value => value === monthDay[1] || value.slice(0,3) === monthDay[1]) + 1;
+    if (!month) return null;
+    const year = Number(today.slice(0,4));
+    const suffix = '-' + String(month).padStart(2,'0') + '-' + monthDay[2].padStart(2,'0');
+    const thisYear = year + suffix;
+    const day = monthDay[3] ? monthDay[3] + suffix : (thisYear < today ? year + 1 + suffix : thisYear);
+    return dateScope(day, today);
+  }
+  return null;
+}
+
+function namedMember(state, name) {
+  return (state.members ?? []).find(person => normalized(person) === name);
+}
+
+function planMatches(plans, title) {
+  const exact = plans.filter(plan => normalized(plan.title) === title);
+  if (exact.length) return exact;
+  const words = value => (normalized(value).match(/[\p{L}\p{N}]+/gu) ?? []);
+  const wanted = words(title).filter(word => !['a','an','the','our'].includes(word));
+  return plans.filter(plan => wanted.length && wanted.every(word => words(plan.title).includes(word)));
+}
+
+function planDetails(state, title, fields, today, previousPlanId) {
+  const suffix = /\s+(?:on\s+)?(today|tomorrow|this weekend|next week|\d{4}-\d{2}-\d{2}|sunday|monday|tuesday|wednesday|thursday|friday|saturday)$/u.exec(title);
+  const scope = suffix && dateScope(suffix[1], today);
+  const name = scope ? title.slice(0, suffix.index).trim().replace(/ (?:start|begin|take place)$/u,'') : title;
+  const plans = sortedPlans(/^(it|that|that plan)$/u.test(name)
+    ? state.plans.filter(plan => plan.id === previousPlanId)
+    : planMatches(state.plans, name).filter(plan => !scope || plan.date >= scope[0] && plan.date < scope[1]));
+  if (!plans.length) {
+    return response('empty', /^(it|that|that plan)$/u.test(name)
+      ? 'Which plan do you mean? Include its name in your question.'
+      : 'No approved plan matches that name. Try its title from Family plan.');
+  }
+  if (plans.length > 1) {
+    const options = planAnswer(plans, '');
+    return {...options, text:'Several approved plans match. Which one do you mean? You can include the date.\n' + options.text};
+  }
+  const [plan] = plans;
+  const lines = fields.map(field => displayFields[field] + ' · ' + (plan[field] || 'Not recorded'));
+  return response('answered', [plan.title, ...lines].join('\n'), plans);
+}
+
+function actionAnswer(state, query, today) {
+  const match = /^(?:show (?:me )?|list )?(overdue|open|incomplete|completed|due|all) (?:family )?(?:actions|tasks|chores)(?: (?:for|assigned to) (.+?))?(?: (?:due )?(today|tomorrow|this week|next week|this weekend))?$/u.exec(query);
+  const whatsDue = /^(?:what(?:'s| is) due|what do we need to do)(?: (today|tomorrow|this week|next week|this weekend))?$/u.exec(query);
+  if (!match && !whatsDue) return null;
+  const mode = match?.[1] || (whatsDue?.[1] || /^what(?:'s| is) due/u.test(query) ? 'due' : 'open');
+  const person = match?.[2] && namedMember(state, match[2]);
+  if (match?.[2] && !person) return response('empty', 'That name is not in this household’s roster.');
+  const period = match?.[3] || whatsDue?.[1];
+  const scope = period && dateScope(period, today);
+  const tasks = (state.tasks ?? []).filter(task =>
+    (!person || task.person === person) &&
+    (mode === 'all' || task.status === (mode === 'completed' ? 'done' : 'open')) &&
+    (mode !== 'overdue' || task.due && task.due < today) &&
+    (mode !== 'due' || task.due) &&
+    (!scope || task.due && task.due >= scope[0] && task.due < scope[1]));
+  const deadlines = mode === 'due' ? sortedPlans(state.plans.filter(plan =>
+    plan.deadline && (!scope ? plan.deadline >= today : plan.deadline >= scope[0] && plan.deadline < scope[1]) &&
+    (!person || plan.person === person || plan.responsibility === person))) : [];
+  if (!tasks.length && !deadlines.length) return response('empty', 'No saved actions or plan deadlines match that request.');
+  const linkedPlans = tasks.map(task => state.plans.find(plan => plan.id === task.plan)).filter(Boolean);
+  const lines = [
+    ...tasks.map(task => ({date:task.due, text:[task.title, task.person || 'Household', task.due || 'No due date', task.status === 'done' && 'Completed'].filter(Boolean).join(' · ')})),
+    ...deadlines.map(plan => ({date:plan.deadline, text:plan.title + ' · Plan deadline · ' + plan.deadline}))
+  ].sort((a,b) => (a.date || '9999').localeCompare(b.date || '9999'));
+  return {...response('answered', lines.map(line => line.text).join('\n'), [...linkedPlans, ...deadlines]),
+    taskIds:tasks.map(task => task.id)};
+}
+
+function flexibleLookup(state, query, today, previousPlanId) {
+  const actions = actionAnswer(state, query, today);
+  if (actions) return actions;
+  const detailPatterns = [
+    [/^(?:when is|what's) (?:the )?(?:deadline|rsvp) (?:for|on) (.+)$/u, ['deadline']],
+    [/^(?:where (?:is|are)|where do (?:i|we) go for|what(?:'s| is) the location (?:of|for)) (.+)$/u, ['location']],
+    [/^(?:what time (?:is|does)|when (?:is|does)) (.+?)(?: (?:start|begin|take place))?$/u, ['date','time']],
+    [/^who(?:'s| is) (?:handling|responsible for|in charge of) (.+)$/u, ['responsibility']],
+    [/^what (?:should|do|does) (?:i|we|they) (?:bring|pack)(?: (?:to|for))? (.+)$/u, ['preparation','instructions']],
+    [/^(?:tell me about|show me (?:the )?details (?:for|about)) (.+)$/u, ['date','time','location','person','responsibility','preparation','deadline','instructions']]
+  ];
+  for (const [pattern, fields] of detailPatterns) {
+    const match = pattern.exec(query);
+    if (match) return planDetails(state, match[1], fields, today, previousPlanId);
+  }
+  const familySchedule = /^(?:what(?:'s| is) (?:on|happening|scheduled)(?: (?:for|on))?|what do we have(?: on)?|(?:show|check)(?: me)? (?:the )?(?:family )?(?:plans?|schedule|calendar)(?: (?:for|on))?) (.+)$/u.exec(query);
+  const personSchedule = /^(?:what does (.+?) have|what(?:'s| is) on (.+?)(?:'s) (?:calendar|schedule))(?: (.+))?$/u.exec(query);
+  if (familySchedule || personSchedule) {
+    const period = personSchedule ? personSchedule[3] || 'this week' : familySchedule[1];
+    const scope = dateScope(period.replace(/^on /u,''), today);
+    if (!scope) return null;
+    const member = personSchedule && namedMember(state, personSchedule[1] || personSchedule[2]);
+    if (personSchedule && !member) return response('empty', 'That name is not in this household’s roster.');
+    const matches = sortedPlans(state.plans.filter(plan =>
+      plan.date >= scope[0] && plan.date < scope[1] && (!member || plan.person === member)));
+    return planAnswer(matches, member ? 'No approved plans list ' + member + ' for that period.' : 'No approved plans for that period.');
+  }
+  return null;
+}
+
 /** @param {Household} state
  * @param {string} question */
-export function answerQuestion(state, question, today = localDay()) {
+export function answerQuestion(state, question, today = localDay(), previousPlanId = '') {
   const query = normalized(question).replace(/[?.!]+$/u, '').replace(/[’‘]/gu,"'");
   const briefing = buildBriefing(state, today);
   if (/^(?:(?:what is|what's) (?:on|happening) this week|what should we prepare)$/u.test(query)) {
@@ -142,7 +275,20 @@ export function answerQuestion(state, question, today = localDay()) {
     const lines = briefing.conflicts.map(({plans,person,date,time}) => person + ' has ' + plans[0].title + ' and ' + plans[1].title + ' at ' + time + ' on ' + date + '.');
     return response('answered', lines.join('\n'), briefing.conflicts.flatMap(conflict => conflict.plans));
   }
-  if (/^(?:what needs review|what needs (?:my |our )?attention|show pending (?:review|sources))$/u.test(query)) {
+  if (/^what needs (?:my |our )?attention$/u.test(query)) {
+    const due = actionAnswer(state, 'what is due today', today);
+    const late = actionAnswer(state, 'overdue actions', today);
+    const sections = [
+      late.status === 'answered' && 'Overdue\n' + late.text,
+      due.status === 'answered' && 'Due today\n' + due.text,
+      briefing.review.length && 'Needs review\n' + briefing.review.map(source => source.title || source.text.slice(0,100)).join('\n')
+    ].filter(Boolean);
+    if (!sections.length) return response('empty', 'No overdue or due-today work and no notices waiting for review.');
+    return {status:'answered',text:sections.join('\n\n'),planIds:[...new Set([...late.planIds,...due.planIds])],
+      sourceIds:[...new Set([...late.sourceIds,...due.sourceIds,...briefing.review.map(source => source.id)])],
+      taskIds:[...new Set([...(late.taskIds ?? []),...(due.taskIds ?? [])])]};
+  }
+  if (/^(?:what needs review|show pending (?:review|sources))$/u.test(query)) {
     if (!briefing.review.length) return response('empty','No sources are waiting for review.');
     return response('answered', briefing.review.map(source => source.title || source.text.slice(0,100)).join('\n'), [], briefing.review.map(source => source.id));
   }
@@ -157,7 +303,8 @@ export function answerQuestion(state, question, today = localDay()) {
     }));
     return planAnswer(matches,'No approved plan matches that title.');
   }
-  return response('unavailable', 'Try a lookup about today, tomorrow, this week, preparation, changes, conflicts, pending review or people by plan title.');
+  return flexibleLookup(state, query, today, previousPlanId) ??
+    response('unavailable', 'Try a date, the name of a plan, or a question about deadlines or actions. I can look up saved household information.');
 }
 
 export function groupActions(tasks, today) {

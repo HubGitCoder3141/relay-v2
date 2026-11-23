@@ -34,6 +34,7 @@ export interface FamilySource {
   extraction: Record<string, {
     status: 'suggested' | 'conflicting' | 'invalid' | 'needs_date';
     evidence: {line: number; value: string}[];
+    anchor?: string;
   }>;
 }
 

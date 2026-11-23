@@ -59,7 +59,7 @@ const cases = [
   ['What needs review?', 'answered', [], ['s4']],
   ['What is on today in Tokyo?', 'unavailable', [], []],
   ['What changed in the lunch menu?', 'unavailable', [], []],
-  ['Who is handling soccer?', 'unavailable', [], []],
+  ['Who is handling soccer?', 'answered', ['p1'], ['s1']],
   ['Tell Sam to collect the children', 'unavailable', [], []],
 ];
 
@@ -84,6 +84,43 @@ test('lookup explains real dates, scheduled people and concrete change values', 
   assert.match(answerQuestion(state,'Who is listed for library books?',today).text,/person unspecified/i);
   assert.match(answerQuestion(state,'What changed?',today).text,/15:30.*16:00/);
   assert.deepEqual(describeChanges(first,first),[]);
+});
+
+test('natural questions combine the household roster, calendar windows and current plan details', () => {
+  const soccer = {...first, location:'Field 3', responsibility:'Jo', preparation:'Cleats', deadline:today};
+  const household = {...state, plans:[soccer, second, third]};
+  assert.deepEqual(answerQuestion(household,'What does Sam have Thursday?',today).planIds,['p2','p1']);
+  assert.deepEqual(answerQuestion(household,'Show me the calendar on 2027-01-01',today).planIds,['p3']);
+  assert.deepEqual(answerQuestion(household,'What do we have this weekend?',today).planIds,[]);
+  const where=answerQuestion(household,'Where is soccer?',today);
+  assert.match(where.text,/Field 3/);
+  assert.deepEqual(where.sourceIds,['s1']);
+  assert.match(answerQuestion(household,'What should we bring to it?',today,where.planIds[0]).text,/Cleats/);
+  assert.match(answerQuestion(household,'Who is handling soccer?',today).text,/Responsible person · Jo/);
+  assert.match(answerQuestion(household,'When is the deadline for soccer?',today).text,/Deadline · 2026-12-31/);
+  assert.match(answerQuestion(household,'Where is it?',today).text,/Which plan/);
+  assert.equal(answerQuestion(household,'Show the calendar on 2026-02-30',today).status,'unavailable');
+});
+
+test('deadline answers cite tasks and approved plans while excluding completed and undated actions', () => {
+  const household={...state, plans:[{...first,deadline:today}], tasks:[
+    {id:'a',title:'Return form',person:'Sam',due:today,status:'open'},
+    {id:'b',title:'Prepare bag',person:'Sam',due:today,status:'done'},
+    {id:'c',title:'Pick up supplies',person:'Jo',status:'open'},
+    {id:'d',title:'Bring ball',person:'Sam',due:'2026-12-30',status:'open'}
+  ]};
+  const due=answerQuestion(household,'What’s due today?',today);
+  assert.deepEqual(due.sourceIds,['s1']);
+  assert.deepEqual(due.taskIds,['a']);
+  assert.deepEqual(answerQuestion(household,'Overdue tasks for Sam',today).taskIds,['d']);
+  assert.deepEqual(answerQuestion(household,'Completed tasks for Sam today',today).taskIds,['b']);
+});
+
+test('duplicate plan names require a date before giving an answer', () => {
+  const secondPickup={...first,id:'another',sourceId:'later',date:'2027-01-01',location:'Different field'};
+  const household={...state,plans:[first,secondPickup]};
+  assert.match(answerQuestion(household,'Where is soccer pickup?',today).text,/Several approved plans match/);
+  assert.deepEqual(answerQuestion(household,'Where is soccer pickup tomorrow?',today).sourceIds,['later']);
 });
 test('model boundary abstains with no candidates or write capability', async () => {
   assert.equal(modelCapabilities.available,false);
