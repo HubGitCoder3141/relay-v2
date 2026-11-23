@@ -65,6 +65,10 @@ class handler(RelayHandler):
     def family_mode(self):
         return self.production and os.environ.get("RELAY_ACCESS_MODE") == "family"
 
+    @property
+    def accounts_mode(self):
+        return self.production and os.environ.get("RELAY_ACCESS_MODE") == "accounts"
+
     def family_owner_key(self):
         key = os.environ.get("RELAY_FAMILY_OWNER_KEY", "")
         if not re.fullmatch(r"[A-Za-z0-9_-]{43,64}", key):
@@ -86,7 +90,7 @@ class handler(RelayHandler):
 
     def check_request(self):
         if os.environ.get("VERCEL_ENV") != "preview" and not (
-                self.production and os.environ.get("RELAY_PRODUCTION_ENABLED") == "1"):
+                (self.family_mode or self.accounts_mode) and os.environ.get("RELAY_PRODUCTION_ENABLED") == "1"):
             raise Problem(503, "Relay production is not configured.")
         host = self.headers.get("Host", "").lower()
         if not re.fullmatch(r"[a-z0-9-]+\.vercel\.app", host):
@@ -123,10 +127,15 @@ class handler(RelayHandler):
                     if statement.strip():
                         db.execute(statement)
             actual = db.execute("SELECT MAX(version) AS version FROM schema_version").fetchone()["version"]
+            if not self.production and actual == 5:
+                # The isolated Marketplace preview uses a separate project and self-initializes.
+                db.execute("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS due text NOT NULL DEFAULT ''")
+                db.execute("INSERT INTO schema_version (version) VALUES (6) ON CONFLICT DO NOTHING")
+                actual = 6
             if self.family_mode:
                 db.execute("SELECT 1 FROM family_owner_sessions LIMIT 1").fetchone()
         if actual != MIGRATIONS[-1][0]:
-            raise Problem(503, "The preview database schema needs an update.")
+            raise Problem(503, "The Relay database schema needs an update.")
         return {"status": "ok", "database": "postgres", "schemaVersion": actual}
 
     def auth(self):
@@ -153,6 +162,13 @@ class handler(RelayHandler):
             return self.account_action()
         if path != "/api/health":
             self.account_id = self.auth().identity(session_token(self.headers))
+        if path == "/api/onboard" and post:
+            self.read_json()
+            with closing(self.open_database()) as db, db:
+                self.begin_database(db, True)
+                self.create_account_household(db)
+            self.json_response(200, {"stage": "ready"})
+            return
         return super().api(path, post)
 
     def account_action(self):
@@ -228,10 +244,13 @@ class handler(RelayHandler):
             if not viewer["active"]:
                 raise Problem(401, "Access to this household was removed.", code="access_removed")
             return viewer, {}
-        viewer, headers = super().household(db, allow_create)
-        if self.production and allow_create:
-            self.bind_account(db, viewer)
-        return viewer, headers
+        if self.accounts_mode and not self.session(db):
+            raise Problem(409, "Create or join a household to continue.", code="household_setup_required")
+        return super().household(db, allow_create)
+
+    def create_account_household(self, db):
+        viewer, _ = super().household(db, True)
+        self.bind_account(db, viewer)
 
     def join(self, db, data):
         if self.family_mode:

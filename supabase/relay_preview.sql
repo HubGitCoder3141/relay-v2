@@ -44,6 +44,7 @@ CREATE TABLE relay_preview.tasks (
     plan text NOT NULL,
     person text NOT NULL,
     status text NOT NULL CHECK(status IN ('open','done')),
+    due text NOT NULL DEFAULT '',
     PRIMARY KEY(household,id)
 );
 CREATE INDEX tasks_order ON relay_preview.tasks(household,rowid);
@@ -71,7 +72,7 @@ CREATE TABLE relay_preview.household_invites (
 );
 CREATE INDEX invites_household ON relay_preview.household_invites(household,expires);
 CREATE TABLE relay_preview.schema_version (version integer PRIMARY KEY);
-INSERT INTO relay_preview.schema_version VALUES (5);
+INSERT INTO relay_preview.schema_version VALUES (6);
 
 REVOKE ALL ON ALL TABLES IN SCHEMA relay_preview FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON ALL SEQUENCES IN SCHEMA relay_preview FROM PUBLIC, anon, authenticated, service_role;

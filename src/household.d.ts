@@ -43,6 +43,7 @@ export interface FollowThroughTask {
   plan: string;
   person: string;
   status: 'open' | 'done';
+  due: string;
 }
 
 export interface Household {

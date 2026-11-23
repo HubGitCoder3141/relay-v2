@@ -37,7 +37,7 @@ class HostedIdentityTests(unittest.TestCase):
 
 
 class FamilyAccessTests(unittest.TestCase):
-    def test_owner_key_and_single_use_invite_share_one_private_household(self):
+    def setUp(self):
         # This checks the hosted handler's access logic using the loopback SQL store.
         driver = ModuleType("psycopg")
         driver.Error = Exception
@@ -48,8 +48,11 @@ class FamilyAccessTests(unittest.TestCase):
         with patch.dict("sys.modules", {"psycopg": driver, "psycopg.rows": rows}):
             spec.loader.exec_module(hosted)
 
-        app = object.__new__(hosted.handler)
-        app.headers = {}
+        self.app = object.__new__(hosted.handler)
+        self.app.headers = {}
+
+    def test_owner_key_and_single_use_invite_share_one_private_household(self):
+        app = self.app
         owner_key = "A" * 43
         env = {"VERCEL_ENV": "production", "RELAY_ACCESS_MODE": "family", "RELAY_FAMILY_OWNER_KEY": owner_key}
         with tempfile.TemporaryDirectory() as temp, patch.dict("os.environ", env):
@@ -96,3 +99,39 @@ class FamilyAccessTests(unittest.TestCase):
                     with self.assertRaises(Problem) as revoked:
                         app.household(db, False)
                     self.assertEqual(revoked.exception.details["code"], "access_removed")
+
+    def test_accounts_can_create_separate_households_or_join_by_invitation(self):
+        app = self.app
+        env = {"VERCEL_ENV": "production", "RELAY_ACCESS_MODE": "accounts"}
+        with tempfile.TemporaryDirectory() as temp, patch.dict("os.environ", env):
+            database = Path(temp) / "accounts.db"
+            migrate(database)
+            with closing(connect(database)) as sqlite, sqlite:
+                sqlite.execute("CREATE TABLE identities (user_id TEXT PRIMARY KEY, access_id TEXT NOT NULL UNIQUE)")
+
+                class AccountStore:
+                    def execute(self, statement, args=()):
+                        return sqlite.execute(statement.replace("CAST(? AS uuid)", "?"), args)
+
+                db = AccountStore()
+                app.account_id = "account-first"
+                with self.assertRaises(Problem) as missing:
+                    app.household(db, True)
+                self.assertEqual(missing.exception.details["code"], "household_setup_required")
+                app.create_account_household(db)
+                first = app.household(db, False)[0]
+                app.create_account_household(db)
+                invite = change_access(db, first, {"action": "invite", "name": "Another caregiver"})
+
+                app.account_id = "account-second"
+                app.create_account_household(db)
+                second = app.household(db, False)[0]
+                self.assertNotEqual(first["household"], second["household"])
+                self.assertEqual(sqlite.execute("SELECT count(*) FROM households").fetchone()[0], 2)
+
+                app.account_id = "account-invitee"
+                member, _ = app.join(db, {"code": invite})
+                self.assertEqual(member["household"], first["household"])
+                self.assertEqual(app.household(db, False)[0]["id"], member["id"])
+                app.account_id = "account-second"
+                self.assertEqual(app.household(db, False)[0]["id"], second["id"])

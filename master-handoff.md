@@ -4,7 +4,7 @@
 
 ## Current project state
 
-The invitation-only family release is live at [Relay Production](https://relay-v3-six.vercel.app/). Section 24 records the verified 2026-11-23 update. The prototype summary immediately below is historical.
+The invitation-only family release is live at [Relay Production](https://relay-v3-six.vercel.app/). Section 25 records the Actions release and the status of multi-family onboarding. The prototype summary immediately below is historical.
 
 The V3 development build supersedes the implementation snapshot immediately below. See §17 for the runtime and open work, and §18 for the Modern Family Home redesign. The original prototype notes and research remain historical context.
 
@@ -442,3 +442,11 @@ The owner can copy a private, single-use invitation link in Household access. Th
 The production Supabase migrations add the private `family_owner_sessions` table and remove API-role execution privileges from the RLS event-trigger function. Verified table RLS, runtime privileges, anonymous schema denial, and removal of both advisor warnings. The remaining advisor entries are informational and relate to the unused old preview schema inside the production project. The Vercel error/fatal log query returned no groups after the smoke test.
 
 Verification passed 19 Python and 30 JavaScript tests. Preview health returned 200 on its pinned database. Live production tests verified health, anonymous access denial, wrong-code rejection, independent owner sessions, invite redemption and replay denial, member export denial, owner export, and server-side sign-out for both roles. The temporary membership was removed. No managed backup restore drill, long-running load test, or broader public launch was performed. Keep the service family-only while those operational requirements remain open.
+
+## 25. Family Actions and multi-family onboarding
+
+The founder requested more useful daily features and access for households beyond their own. Actions adds a dedicated view with overdue, today, upcoming, undated, and completed groups. Household members can create standalone or plan-linked actions, set dates and assignees, edit, complete, reopen, and delete them. The briefing prioritizes the earliest action deadlines. Completion sends the desired state so a retried request cannot flip it back. Migration 6 adds an optional due date while preserving existing actions.
+
+The separate `accounts` runtime mode now requires a verified Supabase identity and makes household creation explicit. A newly signed-in adult can either create their own household or redeem an invitation. Tests model two independent owner identities and a third invited member, including idempotent creation and identity-to-household bindings. The live site still runs in `family` mode. Public registration requires a configured external sign-in provider, a protected multi-family rollout target, verified delivery/sign-in, and the remaining operational checks in Section 24. No household data was migrated between environments.
+
+Protected Preview deploy `dpl_AgaaxHxEKNqMN1RYmhj2ssMFD2Yx` and family Production deploy `dpl_Hui5rj35DuzwD87tKrXgvn2wtN5P` returned Postgres health at schema version 6. Production also passed live checks of the Actions route, account gate, family sign-in, state read and sign-out without adding household records. Production Supabase confirmed the due-date column and task RLS. The Marketplace preview was not writable through the Supabase connector, so its pinned protected health endpoint performed the additive upgrade. Local verification passed 21 Python tests, 31 JavaScript tests, a strict UI audit, and an Edge desktop/mobile walkthrough of the new action flow. Captures are `output/playwright/v3-actions-390.png`, `v3-actions-820.png`, and `v3-actions-1440.png`.

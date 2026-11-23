@@ -1,8 +1,19 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { answerQuestion, buildBriefing, describeChanges, findDuplicates, interpretSource, modelCapabilities } from '../src/intelligence.mjs';
+import { answerQuestion, buildBriefing, describeChanges, findDuplicates, groupActions, interpretSource, modelCapabilities } from '../src/intelligence.mjs';
 
 const today = '2026-12-31';
+test('actions separate completed work and keep open deadlines in chronological order', () => {
+  const tasks = [
+    {id:'future-last',status:'open',due:'2027-01-04'}, {id:'open',status:'open'},
+    {id:'now',status:'open',due:today}, {id:'late',status:'open',due:'2026-12-30'},
+    {id:'future-first',status:'open',due:'2027-01-01'}, {id:'done',status:'done',due:'2026-12-29'}
+  ];
+  const groups = groupActions(tasks, today);
+  assert.deepEqual(Object.fromEntries(Object.entries(groups).map(([key, rows]) => [key, rows.map(row => row.id)])), {
+    overdue:['late'], today:['now'], upcoming:['future-first','future-last'], anytime:['open'], done:['done']
+  });
+});
 const first = { id: 'p1', title: 'Soccer pickup', date: today, time: '16:00', person: 'Sam', sourceId: 's1', history: [] };
 const prior = { title: 'Choir rehearsal', date: today, time: '15:30', person: 'Sam', sourceId: 's0' };
 const second = { ...first, id: 'p2', title: 'Choir rehearsal', sourceId: 's2', history: [prior] };

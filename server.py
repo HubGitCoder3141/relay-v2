@@ -81,6 +81,9 @@ MIGRATIONS = (
         ALTER TABLE sources ADD COLUMN responsibility TEXT NOT NULL DEFAULT '';
         ALTER TABLE sources ADD COLUMN deadline TEXT NOT NULL DEFAULT '';
     """),
+    (6, """
+        ALTER TABLE tasks ADD COLUMN due TEXT NOT NULL DEFAULT '';
+    """),
 )
 
 
@@ -253,7 +256,7 @@ def snapshot(db, household):
         history = old["history"] + [{k: old[k] for k in (*FIELDS, "sourceId")}] if old else []
         plans[plan_id] = {"id": plan_id, **details, "sourceId": source_id, "history": history}
     tasks = [dict(row) for row in db.execute(
-        "SELECT id,title,plan,person,status FROM tasks WHERE household=? ORDER BY rowid DESC", (household,)
+        "SELECT id,title,plan,person,status,due FROM tasks WHERE household=? ORDER BY rowid DESC", (household,)
     )]
     return {"members": member_names(db, household), "sources": sources, "plans": list(plans.values()), "tasks": tasks,
             "schemaVersion": MIGRATIONS[-1][0]}
@@ -290,15 +293,21 @@ def apply_review(db, household, payload):
 
 def apply_task(db, household, payload):
     action = field(payload, "action", 10, required=True)
-    if action == "toggle":
+    if action in ("toggle", "status", "edit", "delete"):
         task_id = field(payload, "id", 80, required=True)
         task = db.execute("SELECT status FROM tasks WHERE household=? AND id=?", (household, task_id)).fetchone()
         if task is None:
             raise Problem(404, "This follow-through action is unavailable.")
-        status = "done" if task["status"] == "open" else "open"
-        db.execute("UPDATE tasks SET status=? WHERE household=? AND id=?", (status, household, task_id))
-        return
-    if action != "create":
+        if action == "delete":
+            db.execute("DELETE FROM tasks WHERE household=? AND id=?", (household, task_id))
+            return
+        if action in ("toggle", "status"):
+            status = ("done" if task["status"] == "open" else "open") if action == "toggle" else field(payload, "status", 4)
+            if status not in ("open", "done"):
+                raise Problem(400, "Choose an action status.")
+            db.execute("UPDATE tasks SET status=? WHERE household=? AND id=?", (status, household, task_id))
+            return
+    elif action != "create":
         raise Problem(400, "Choose a follow-through action.")
     title = field(payload, "title", 160, required=True)
     person = field(payload, "person", 80)
@@ -307,8 +316,15 @@ def apply_task(db, household, payload):
     plan = field(payload, "plan", 80)
     if plan and db.execute("SELECT 1 FROM versions WHERE household=? AND plan=?", (household, plan)).fetchone() is None:
         raise Problem(404, "This plan is unavailable.")
-    db.execute("INSERT INTO tasks (household,id,title,plan,person,status) VALUES (?,?,?,?,?,?)",
-               (household, identifier(), title, plan, person, "open"))
+    due = field(payload, "due", 10)
+    if due and not valid_date(due):
+        raise Problem(400, "Enter a valid due date.")
+    if action == "edit":
+        db.execute("UPDATE tasks SET title=?,plan=?,person=?,due=? WHERE household=? AND id=?",
+                   (title, plan, person, due, household, task_id))
+    else:
+        db.execute("INSERT INTO tasks (household,id,title,plan,person,status,due) VALUES (?,?,?,?,?,?,?)",
+                   (household, identifier(), title, plan, person, "open", due))
 
 
 def connect(database):

@@ -182,12 +182,28 @@ class HouseholdAPI(unittest.TestCase):
         self.post("tasks", {"action": "create", "title": "x", "plan": other["plans"][0]["id"]}, 404)
         self.post("tasks", {"action": "create", "title": "x", "person": "Stranger"}, 400)
 
+    def test_edit_dated_standalone_action_and_set_status(self):
+        payload = {"title": "Return books", "due": "2026-12-09", "person": "Alex"}
+        task = self.post("tasks", {**payload, "action": "create"})["tasks"][0]
+        self.assertEqual((task["due"], task["plan"]), ("2026-12-09", ""))
+        edit = {"action": "edit", "id": task["id"], **payload, "due": "2026-02-30"}
+        self.post("tasks", edit, 400)
+        edited = self.post("tasks", {**edit, "due": "2026-12-10", "title": "Return books to school"})["tasks"][0]
+        self.assertEqual((edited["title"], edited["due"]), ("Return books to school", "2026-12-10"))
+        for _ in range(2):
+            result = self.post("tasks", {"action": "status", "id": task["id"], "status": "done"})
+            self.assertEqual(result["tasks"][0]["status"], "done")
+        _, other_cookie = self.new_household()
+        removal = {"action": "delete", "id": task["id"]}
+        self.assertEqual(self.request("POST", "/api/tasks", other_cookie, removal)[0], 404)
+        self.assertEqual(self.post("tasks", removal)["tasks"], [])
+
     def test_database_migration_ledger_and_health_endpoint(self):
         status, body, _ = self.request("GET", "/api/health")
-        self.assertEqual((status, body["status"], body["schemaVersion"]), (200, "ok", 5))
+        self.assertEqual((status, body["status"], body["schemaVersion"]), (200, "ok", 6))
         db = sqlite3.connect(self.database)
         try:
-            self.assertEqual(db.execute("SELECT version FROM schema_migrations ORDER BY version").fetchall(), [(1,), (2,), (3,), (4,), (5,)])
+            self.assertEqual(db.execute("SELECT version FROM schema_migrations ORDER BY version").fetchall(), [(1,), (2,), (3,), (4,), (5,), (6,)])
         finally:
             db.close()
 

@@ -259,3 +259,21 @@ dialog { border-radius:24px; }
   .pagehead .btn { margin-top:15px; }
   .ask-panel,.signals { padding:18px; }
 }
+.action-board { max-width: 900px; margin: 0 auto; padding: clamp(8px,3vw,34px); }
+.action-group { display:grid; grid-template-columns:minmax(120px,1fr) 3fr; gap:20px; padding:16px 0; border-top:1px solid var(--line); }
+.action-group h2 { margin:8px 0 0; font:400 1.4rem/1.15 var(--editorial); }
+.action-group[data-action-group="overdue"] h2 { color:var(--danger); }
+.action-group .task-row:last-child { border-bottom:0; }
+.task-name { display:block; max-width:100%; padding:2px 0 5px; border:0; background:none; color:inherit; text-align:left; font-weight:700; overflow-wrap:anywhere; }
+.task-name:hover { text-decoration:underline; text-underline-offset:3px; }
+.task-row.is-done { text-decoration:none; }
+.task-row.is-done .task-name { text-decoration:line-through; }
+.actions-completed { border-top:1px solid var(--line); padding-top:16px; }
+.actions-completed summary { cursor:pointer; padding:10px 0; }
+.actions-fields { display:grid; grid-template-columns:1fr 1fr; gap:12px; min-width:0; }
+@media (max-width: 760px) {
+  .top nav:has(a[href="#actions"]) { grid-template-columns:1fr 1.2fr 1fr .9fr 1.15fr; }
+  .top nav a { white-space:nowrap; }
+  .action-group { grid-template-columns:1fr; gap:4px; }
+}
+@media (max-width: 380px) { .actions-fields { grid-template-columns:1fr; } }

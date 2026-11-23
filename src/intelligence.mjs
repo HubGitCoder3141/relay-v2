@@ -160,3 +160,13 @@ export function answerQuestion(state, question, today = localDay()) {
   return response('unavailable', 'Try a lookup about today, tomorrow, this week, preparation, changes, conflicts, pending review or people by plan title.');
 }
 
+export function groupActions(tasks, today) {
+  const groups = { overdue: [], today: [], upcoming: [], anytime: [], done: [] };
+  for (const task of tasks) {
+    const group = task.status === 'done' ? 'done' : !task.due ? 'anytime' :
+      task.due < today ? 'overdue' : task.due === today ? 'today' : 'upcoming';
+    groups[group].push(task);
+  }
+  for (const group of ['overdue', 'upcoming']) groups[group].sort((a,b) => a.due.localeCompare(b.due));
+  return groups;
+}

@@ -1,4 +1,4 @@
-import { buildBriefing, answerQuestion, findDuplicates, describeChanges } from './intelligence.mjs';
+import { buildBriefing, answerQuestion, findDuplicates, describeChanges, groupActions } from './intelligence.mjs';
 
 const main = document.querySelector('#main');
 const dialog = document.querySelector('#dialog');
@@ -22,7 +22,7 @@ let incomingInvite = /^#invite=([A-Za-z0-9_-]{32})$/.exec(location.hash)?.[1] ||
 if(incomingInvite)history.replaceState(history.state,'',location.pathname+location.search+'#briefing');
 let pendingReconciliation;
 let selectedDay='';
-const pages = { briefing: 'Briefing', plan: 'Family plan', inbox: 'Inbox', ask: 'Ask Relay' };
+const pages = { briefing: 'Briefing', plan: 'Family plan', actions: 'Actions', inbox: 'Inbox', ask: 'Ask Relay' };
 const shapes = {
   sun:'<circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.5 1.5m11 11L19 19M19 5l-1.5 1.5m-11 11L5 19"/>',
   stack:'<path d="m3 8 9-5 9 5-9 5zM3 12l9 5 9-5M3 16l9 5 9-5"/>',
@@ -125,15 +125,30 @@ function weekCalendar(rows,start){
  });
  return '<div class="week-calendar" aria-label="Filter the schedule by date">'+days.join('')+'</div>';
 }
-function taskRow(task){const plan=state.plans.find(p=>p.id===task.plan);return '<div class="task-row '+(task.status==='done'?'is-done':'')+'"><button class="task-check" data-action="toggle-task" data-id="'+esc(task.id)+'" aria-label="Mark '+esc(task.title)+' as '+(task.status==='done'?'open':'done')+'">'+(task.status==='done'?icon('check'):'')+'</button><div><strong>'+esc(task.title)+'</strong><small>'+(plan?esc(plan.title)+' · ':'')+esc(task.person||'Household')+'</small></div></div>';}
+function taskRow(task){
+ const plan=state.plans.find(p=>p.id===task.plan);
+ const done=task.status==='done';
+ const details=[task.person||'Household',plan?.title,task.due&&'Due '+dateLabel(task.due)].filter(Boolean);
+ return '<div class="task-row '+(done?'is-done':'')+'"><button class="task-check" data-action="toggle-task" data-id="'+esc(task.id)+'" aria-label="Mark '+esc(task.title)+' as '+(done?'open':'done')+'">'+(done?icon('check'):'')+'</button><div>'+button('edit-task',esc(task.title),'task-name','',task.id)+'<small>'+esc(details.join(' · '))+'</small></div></div>';
+}
 function tasksFor(planId=''){return (state.tasks||[]).filter(task=>!planId||task.plan===planId);}
+function actionsPage(){
+ const groups=groupActions(tasksFor(),dateKey(now()));
+ const sections=[['overdue','Overdue'],['today','Due today'],['upcoming','Coming up'],['anytime','No due date']];
+ const rows=sections.filter(([key])=>groups[key].length).map(([key,label])=>
+  '<section class="action-group" data-action-group="'+key+'"><h2>'+label+'</h2><div>'+groups[key].map(taskRow).join('')+'</div></section>').join('');
+ const completed=groups.done.length?'<details class="actions-completed"><summary>Completed ('+groups.done.length+')</summary>'+groups.done.map(taskRow).join('')+'</details>':'';
+ return titleBlock('Family actions','Keep track of what needs doing and who’s handling it.',button('new-task','Add action','btn primary','plus'))+
+  '<div class="action-board">'+(rows||empty(tasksFor().length?'All caught up':'No actions yet',tasksFor().length?'Completed actions are below.':'Add a job, a form to return, or something to bring.'))+completed+'</div>';
+}
 function home(){
  const [start,end]=weekBounds(),review=briefing.review.length,rows=sortedPlans().filter(p=>p.date>=start&&p.date<=end),actions=briefing.openTasks.length;
  const today=dateKey(now());
  const todayCount=briefing.today.length;
  const urgent=todayCount?todayCount+' '+(todayCount===1?'plan':'plans')+' today.':'No plans scheduled today.';
  const items=review?briefing.review.slice(0,3).map(sourceRow).join(''):empty('Inbox clear','New information waits here for a decision.');
- const taskItems=actions?briefing.openTasks.slice(0,4).map(taskRow).join(''):empty('Nothing to follow through','Add a practical action from any plan detail.');
+ const tasks=groupActions(briefing.openTasks,today);
+ const taskItems=actions?[...tasks.overdue,...tasks.today,...tasks.upcoming,...tasks.anytime].slice(0,4).map(taskRow).join(''):empty('Nothing to follow through','Add a job from the Actions view or any plan detail.');
  const groups=[...new Set(rows.map(plan=>plan.date))].filter(date=>!selectedDay||date===selectedDay);
  const agenda=groups.map(date=>'<section class="agenda-day"><h3>'+esc(date===today?'Today':dateLabel(date))+'</h3>'+rows.filter(plan=>plan.date===date).map(planRow).join('')+'</section>').join('');
  const preparation=[...briefing.today,...briefing.upcoming].filter(plan=>plan.date>=start&&plan.date<=end&&(plan.preparation||plan.instructions)).slice(0,3);
@@ -143,7 +158,7 @@ function home(){
  '<div class="ledger-grid"><section class="ledger-column calendar-room"><div class="column-title"><h2>On the calendar</h2>'+toPage('plan','Full plan')+'</div>'+weekStrip()+weekCalendar(rows,start)+'<div class="sheet" aria-label="Scheduled plans">'+(agenda||empty('No scheduled plans',selectedDay?'Choose another date or select this day again to show the week.':'Approve a dated suggestion to see it in the schedule.'))+'</div></section>'+
  '<aside class="ledger-column right-rail"><div class="column-title"><h2>Needs review</h2>'+toPage('inbox','Inbox')+'</div><div class="review-sheet">'+items+'</div>'+
  (prep?'<section class="preparation-board"><h2>Get ready</h2>'+prep+'</section>':'')+
- '<div class="column-title follow-title"><h2>Follow-through</h2></div><div class="task-list">'+taskItems+'</div></aside></div>'+signals();
+ '<div class="column-title follow-title"><h2>Follow-through</h2><a class="textlink" href="#actions">View actions</a></div><div class="task-list">'+taskItems+'</div></aside></div>'+signals();
 }
 function signals(){
   const conflicts=briefing.conflicts.map(c=>'<div class="signal"><strong>Schedule overlap</strong><p>'+esc(c.person)+' has two plans at '+esc(timeLabel(c.time))+' on '+esc(dateLabel(c.date))+'.</p>'+c.plans.map(p=>button('detail',esc(p.title),'small','',p.id)).join('')+'</div>');
@@ -173,7 +188,7 @@ function render(movement){
  document.querySelectorAll('nav a').forEach(a=>{if(a.hash==='#'+key)a.setAttribute('aria-current','page');else a.removeAttribute('aria-current');});
  briefing=buildBriefing(state,dateKey(now()));
  document.querySelector('#nav-count').textContent=briefing.review.length||'';
- main.innerHTML=({briefing:home,plan:plans,inbox,ask}[key])();
+ main.innerHTML=({briefing:home,plan:plans,actions:actionsPage,inbox,ask}[key])();
  if(movement==='route')settle(main.firstElementChild,{y:8,duration:260});
  if(movement==='day')settle(main.querySelector('.calendar-room .sheet'),{y:4});
  if(movement==='previous'||movement==='next'){
@@ -300,6 +315,17 @@ function reconcileDraft(){
  form.elements.title.focus();
  notify('Choices applied. Check and approve the draft.');
 }
+function taskEditor(task){
+ const editing=Boolean(task);
+ const heading=editing?'Edit action':'Add action';
+ openPanel(heading,'<form id="task-editor" data-id="'+esc(task?.id||'')+'" novalidate>'+
+  '<label>Action<input name="title" maxlength="160" required value="'+esc(task?.title||'')+'" placeholder="e.g. Return the library books"></label>'+
+  '<div class="actions-fields"><label>Who will handle it?<select name="person">'+options(state.members.map(person=>[person,person]),task?.person||'','Household')+'</select></label>'+
+  '<label>Due date<input name="due" type="date" value="'+esc(task?.due||'')+'"></label></div>'+
+  '<label>Related plan<select name="plan">'+options(state.plans.map(plan=>[plan.id,(plan.date?dateLabel(plan.date)+' · ':'')+plan.title]),task?.plan||'','No related plan')+'</select></label>'+
+  '<p class="error" role="alert"></p><div class="actions">'+(editing?button('delete-task','Delete action','btn secondary','',task.id):'')+
+  '<button class="btn primary">'+(editing?'Save changes':'Add action')+'</button></div></form>');
+}
 function detail(id){
  const p=state.plans.find(x=>x.id===id);if(!p)return;
  const source=state.sources.find(x=>x.id===p.sourceId);
@@ -319,7 +345,7 @@ function household(){
 }
 const roleLabels={owner:'Owner',admin:'Administrator',member:'Adult member'};
 function invitationDetails(code){
- const link=familyMode?location.origin+'/#invite='+encodeURIComponent(code):'';
+ const link=accountMode?location.origin+'/#invite='+encodeURIComponent(code):'';
  return '<div class="invite-code"><label>One-time invitation code<input readonly value="'+esc(code)+'"></label>'+
  (link?'<label>Invitation link<input id="invite-link" readonly value="'+esc(link)+'"></label>'+
  button('copy-invite','Copy invitation link','btn secondary'):'')+
@@ -339,7 +365,7 @@ function accessPanel(code=''){
  (viewer.role==='owner'&&!familyMode?button('join','Join another household','btn secondary'):''));
 }
 function joinPanel(){
- openPanel('Join a household','<p>Enter the private code from a household owner or administrator. If this browser already has household records, use a fresh browser profile.</p><form id="join" novalidate><label>Invitation code<input name="code" maxlength="80" required autocomplete="off"></label><p class="error" role="alert"></p><div class="actions"><button class="btn primary">Join household</button></div></form>');
+ openPanel('Join a household','<p>Enter the private code from a household owner or administrator.</p><form id="join" novalidate><label>Invitation code<input name="code" maxlength="80" required autocomplete="off" value="'+esc(incomingInvite)+'"></label><p class="error" role="alert"></p><div class="actions"><button class="btn primary">Join household</button></div></form>');
 }
 function removeAccess(id){
  const person=state.access.people.find(item=>item.id===id);
@@ -386,6 +412,23 @@ function showSignIn(stage=familyMode?'family':'email'){
   '<button class="btn primary">'+(family&&incomingInvite?'Join household':family||code?'Sign in':'Send code')+'</button></div></form></section>';
  main.querySelector('input').focus();
 }
+function showHouseholdSetup(){
+ state=undefined;
+ document.title='Set up your household · Relay';
+ main.innerHTML='<section class="account-entry"><h1>Set up your household</h1><p>Create a private workspace for your family, or join with an invitation.</p>'+
+  '<form id="household-setup"><p class="error" role="alert"></p><div class="actions"><button class="btn primary">Create household</button>'+
+  button('join','Use an invitation','btn secondary')+button('account-signout','Sign out','btn secondary')+'</div></form></section>';
+ if(incomingInvite)joinPanel();
+ else main.querySelector('button').focus();
+}
+async function submitHouseholdSetup(form){
+ busy=true;
+ const submit=form.querySelector('button');
+ submit.disabled=true;
+ try{await api('onboard',{});await start();}
+ catch(error){form.querySelector('.error').textContent=error.message;}
+ finally{busy=false;submit.disabled=false;}
+}
 async function submitAccount(form,data){
  busy=true;
  const submit=form.querySelector('button[type="submit"],button:not([type])');
@@ -411,6 +454,7 @@ document.addEventListener('submit',async e=>{
  const f=e.target;e.preventDefault();if(busy)return;
  const data=Object.fromEntries(new FormData(f));
  if(f.id==='account-form')return submitAccount(f,data);
+ if(f.id==='household-setup')return submitHouseholdSetup(f);
  const required=[...f.querySelectorAll('[required]')].find(el=>!el.value.trim());
  if(required){const err=f.querySelector('.error');err.textContent='Enter '+({text:'the original wording',name:'a name',code:'an invitation code',question:'a question',title:f.id==='task'?'an action':'a plan title'}[required.name])+' to continue.';err.id=f.id+'-error';required.setAttribute('aria-invalid','true');required.setAttribute('aria-describedby',err.id);required.focus();return;}
  if(f.id==='member')return save('members',data,()=>{household();notify('Family member added.');});
@@ -421,6 +465,7 @@ document.addEventListener('submit',async e=>{
   content.querySelector('.invite-code input')?.focus();
  });
  if(f.id==='join')return save('join',data,()=>{
+  incomingInvite='';
   conversation=[];weekOffset=0;selectedDay='';planFilter='';inboxFilter='pending';
   location.hash='briefing';render();main.focus();notify('You joined the household.');
  });
@@ -438,7 +483,11 @@ document.addEventListener('submit',async e=>{
    return true;
   });
  }
- if(f.id==='task')await save('tasks',{action:'create',title:data.title,person:data.person,plan:f.dataset.plan},()=>{main.focus();notify('Follow-through action added.');});
+ if(f.id==='task')return save('tasks',{action:'create',title:data.title,person:data.person,plan:f.dataset.plan},()=>{detail(f.dataset.plan);notify('Action added.');});
+ if(f.id==='task-editor'){
+  const editing=Boolean(f.dataset.id);
+  return save('tasks',{...data,action:editing?'edit':'create',id:f.dataset.id},()=>{main.focus();notify(editing?'Action updated.':'Action added.');});
+ }
 });
 document.addEventListener('click',async e=>{
  const el=e.target.closest('[data-action]');if(!el||busy)return;
@@ -482,7 +531,27 @@ document.addEventListener('click',async e=>{
  case 'next':weekOffset++;selectedDay='';render('next');break;
  case 'previous':weekOffset--;selectedDay='';render('previous');break;
  case 'prompt':return askQuestion(id);
- case 'toggle-task':return save('tasks',{action:'toggle',id},()=>{main.focus();notify('Follow-through updated.');});
+ case 'new-task':return taskEditor();
+ case 'edit-task':{
+  const task=tasksFor().find(item=>item.id===id);
+  if(task)taskEditor(task);
+  return;
+ }
+ case 'delete-task':return openPanel('Delete this action?','<p>This removes the action from the household.</p><p class="error" role="alert"></p><div class="actions">'+button('edit-task','Keep action','btn secondary','',id)+button('confirm-task-delete','Delete action','btn danger','',id)+'</div>');
+ case 'confirm-task-delete':return save('tasks',{action:'delete',id},()=>{main.focus();notify('Action deleted.');});
+ case 'toggle-task':{
+  const task=tasksFor().find(item=>item.id===id);
+  if(!task)return;
+  const status=task.status==='done'?'open':'done';
+  const inDetails=dialog.open&&Boolean(task.plan);
+  return save('tasks',{action:'status',id,status},()=>{
+   if(inDetails)detail(task.plan);
+   const next=[...(inDetails?content:main).querySelectorAll('[data-action="toggle-task"]')].find(item=>item.dataset.id===id);
+   if(next){const group=next.closest('details');if(group)group.open=true;next.focus();}
+   else main.focus();
+   notify(status==='done'?'Action completed.':'Action reopened.');
+  });
+ }
  case 'reject':return save('review',{id,decision:'reject'},()=>{main.focus();notify('Suggestion rejected.');});
  case 'reset-confirm':return openPanel('Delete household data?','<p>This permanently removes your family names, plans, sources, actions, and history from Relay. Export a copy first if you need one.</p><p class="error" role="alert"></p><div class="actions"><button class="btn secondary" data-action="household" autofocus>Keep data</button>'+button('reset','Delete data','btn danger')+'</div>');
  case 'reset':return save('reset',{},()=>{conversation=[];weekOffset=0;selectedDay='';planFilter='';inboxFilter='pending';location.hash='briefing';render();main.focus();notify('Household data deleted.');});
@@ -491,9 +560,20 @@ document.addEventListener('click',async e=>{
 });
 window.addEventListener('hashchange',()=>{if(!state)return;render('route');if(!dialog.open){main.focus({preventScroll:true});window.scrollTo(0,0);}});
 async function start(){
- try{state=await api('state');accountMode=Boolean(state.accountMode);familyMode=Boolean(state.familyMode);incomingInvite='';render();}
+ try{
+  state=await api('state');
+  accountMode=Boolean(state.accountMode);
+  familyMode=Boolean(state.familyMode);
+  render();
+  if(incomingInvite&&accountMode&&!familyMode)joinPanel();
+  incomingInvite='';
+ }
  catch(err){
-  if(err.code==='sign_in_required'||err.code==='family_sign_in_required'){
+  if(err.code==='household_setup_required'){
+   accountMode=true;
+   familyMode=false;
+   showHouseholdSetup();
+  }else if(err.code==='sign_in_required'||err.code==='family_sign_in_required'){
    accountMode=true;
    familyMode=err.code==='family_sign_in_required';
    showSignIn();

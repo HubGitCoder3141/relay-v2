@@ -33,7 +33,7 @@ Motion follows the change. Week navigation moves the date strip and agenda in th
 - Destructive local deletion has a confirmation step and export is available first.
 - Forms use visible labels, native date/time controls, inline errors, dialog focus restoration, and Escape handling.
 - Reduced motion removes transitions.
-- Follow-through actions are attached to a plan, assigned to a household member where known, and explicitly toggled open/done. A checkmark is not evidence of an external action.
+- Follow-through actions can stand alone or attach to a plan. The Actions view uses labeled date groups with a single ruled column on phones, followed by a disclosure for completed work. The same row also appears on the briefing and in plan detail. Keep the title and check control separate for editing and completion. A checkmark records the family's update.
 
 ## Runtime owners
 

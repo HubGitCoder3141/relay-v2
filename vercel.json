@@ -12,6 +12,6 @@
     {"source": "/index.html", "destination": "/api/relay?relay_path=index.html"},
     {"source": "/styles.css", "destination": "/api/relay?relay_path=styles.css"},
     {"source": "/src/:file", "destination": "/api/relay?relay_path=src/:file"},
-    {"source": "/api/:path(state|health|export|intake|review|tasks|reset|members|access|join|auth)", "destination": "/api/relay?relay_path=api/:path"}
+    {"source": "/api/:path(state|health|export|intake|review|tasks|reset|members|access|join|auth|onboard)", "destination": "/api/relay?relay_path=api/:path"}
   ]
 }

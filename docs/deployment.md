@@ -16,18 +16,20 @@ The product needs a Python service, transactional persistence, and session autho
 
 Use `RELAY_PRODUCTION_ENABLED=1` and `RELAY_ACCESS_MODE=family` in Vercel Production with the separate Production `POSTGRES_URL`. Set `RELAY_FAMILY_OWNER_KEY` as a secret generated with `secrets.token_urlsafe(32)`. Keep a private copy for recovery. Apply `supabase/family_owner_sessions.sql` after the base schema and runtime role grants. This migration can run before switching deployments. Standard Vercel protection keeps preview URLs protected while allowing visitors to reach Relay's own sign-in page on its production domain.
 
+For an existing Postgres deployment at schema version 5, apply `supabase/actions_v6.sql` before the Actions release. Existing actions keep their assignment, link, and completion status. The new due date starts empty. The Marketplace Preview applies the additive upgrade on its protected health endpoint. An older release may report a schema mismatch after the ledger advances, although it can still read and write the previous action fields.
+
 The owner key opens the single private workspace. Under **Household → Household access**, the owner or an administrator can issue a named, 24-hour, single-use code or link for each family member's browser. The link carries the code in its URL fragment and the app removes that fragment before rendering. The browser exchanges the code on explicit confirmation and receives a Secure HttpOnly session cookie. Members need a fresh invitation after signing out or clearing their browser cookies. The owner can revoke device access from **Household access**. Owner sessions are independent and expire after 30 days. Changing the owner key and deploying it invalidates prior owner sessions on the new deployment. The owner key is for the owner only.
 
 For each release, verify `/api/health`, confirm anonymous access to `/api/state` and `/api/export` returns 401, then verify sign-in and persistence using the production URL. Keep the previous Vercel deployment available for rollback. The owner can download a private data export through Household settings. The export is readable and portable, with no automated restore workflow. A managed backup and tested restoration process are still required for a broader launch.
 
-## Optional email sign-in
+## Multi-family account rollout
 
-Production expects the separate Supabase project `relay`. The existing Preview credentials remain scoped to Preview.
+Multi-family onboarding is available in the code under `RELAY_ACCESS_MODE=accounts`. Keep the family deployment configured with `family`. A separate account rollout target needs its own isolated Postgres and Auth configuration. The runtime currently pins its Supabase project by reference, so verify or update that pin for a separate target before deploying. Preview credentials remain scoped to Preview.
 
 1. Add the Production project's **Transaction pooler** connection string to Vercel as `POSTGRES_URL`, scoped to **Production**. Store it in Vercel's secret manager.
 2. Set `SUPABASE_PUBLISHABLE_KEY` to the same project's publishable key in Production. Use a custom SMTP sender in Supabase Auth that can deliver to external users. Configure the email OTP template to include `{{ .Token }}`.
 3. Apply `supabase/relay_preview.sql` with its schema name replaced by `relay_production`, then apply `supabase/production_identities.sql`. This gives hosted users durable identity-to-membership links without exposing the tables to Supabase Data API roles.
-4. After configuration, set `RELAY_PRODUCTION_ENABLED=1` for a protected Production candidate. Verify an external email signup, logout, token expiry, invite and competing revision workflows before assigning the public URL.
+4. After configuration, set `RELAY_PRODUCTION_ENABLED=1` and `RELAY_ACCESS_MODE=accounts` for a protected candidate. Verify an external email signup, explicit household creation, first-time invite redemption, logout, token expiry, data isolation between two separate households, and competing revision workflows before assigning a public URL.
 
 The browser receives a Secure, HttpOnly account cookie. Supabase confirms the identity on each protected API request. Accounts return to their bound household. Expired access requires a fresh email code.
 

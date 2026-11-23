@@ -77,12 +77,13 @@ try {
   await capture('plan-detail-mobile');
   await page.getByLabel('Action', {exact:true}).fill('Pack gloves');
   await page.getByRole('button', {name:'Add action'}).click();
-  await page.getByRole('status').filter({hasText:'Follow-through action added'}).waitFor();
+  await page.getByRole('status').filter({hasText:'Action added'}).waitFor();
   await page.reload();
   await page.getByRole('button', {name:/Community garden/}).click();
   await page.getByRole('button', {name:'Mark Pack gloves as done'}).click();
-  await page.getByRole('status').filter({hasText:'Follow-through updated'}).waitFor();
-  await page.getByRole('status').filter({hasText:'Follow-through updated'}).waitFor({state:'hidden'});
+  await page.getByRole('status').filter({hasText:'Action completed'}).waitFor();
+  await page.keyboard.press('Escape');
+  await page.getByRole('status').filter({hasText:'Action completed'}).waitFor({state:'hidden'});
   await page.setViewportSize({width:1440,height:1000});
   await page.getByRole('button', {name:'Household and data settings'}).click();
   await page.getByRole('button', {name:'Household access',exact:true}).click();
@@ -160,8 +161,31 @@ try {
   const visit=(await post(page,'intake',{title:'Library visit',text:'Date: '+tomorrow+'\nTime: 10:30\nFor: Casey\nBring: Library books'})).sources[0];
   await post(page,'review',{id:visit.id,decision:'approve'});
   await post(page,'intake',{title:'Swim lesson update',text:'Please confirm the start time for next week.'});
-  await post(page,'tasks',{action:'create',title:'Pack library tote',person:'Casey'});
+  await post(page,'tasks',{action:'create',title:'Pack library tote',person:'Casey',due:tomorrow});
   await page.reload();
+  await nav.getByRole('link',{name:'Actions',exact:true}).click();
+  await page.getByRole('button',{name:'Add action',exact:true}).click();
+  const taskEditor=page.getByRole('dialog');
+  await taskEditor.getByRole('button',{name:'Add action',exact:true}).click();
+  assert.equal(await taskEditor.getByLabel('Action',{exact:true}).getAttribute('aria-invalid'),'true');
+  await taskEditor.getByLabel('Action',{exact:true}).fill('Return library books');
+  await taskEditor.getByLabel('Due date').fill(today);
+  await taskEditor.getByLabel('Who will handle it?').selectOption('Casey');
+  await taskEditor.getByRole('button',{name:'Add action',exact:true}).click();
+  await page.locator('[data-action-group="today"]').getByRole('button',{name:'Return library books',exact:true}).click();
+  await taskEditor.getByLabel('Due date').fill(tomorrow);
+  await taskEditor.getByRole('button',{name:'Save changes',exact:true}).click();
+  await page.reload();
+  const upcomingAction=page.locator('[data-action-group="upcoming"]').getByRole('button',{name:'Mark Return library books as done',exact:true});
+  await upcomingAction.focus();
+  await page.keyboard.press('Space');
+  const reopen=page.getByRole('button',{name:'Mark Return library books as open',exact:true});
+  await reopen.waitFor();
+  assert.equal(await reopen.evaluate(element=>element===document.activeElement),true);
+  await page.getByRole('button',{name:'Return library books',exact:true}).click();
+  await taskEditor.getByRole('button',{name:'Delete action',exact:true}).click();
+  await taskEditor.getByRole('button',{name:'Delete action',exact:true}).click();
+  await page.getByRole('button',{name:'Return library books',exact:true}).waitFor({state:'hidden'});
   await nav.getByRole('link',{name:'Briefing',exact:true}).click();
   await page.getByRole('button',{name:'Casey',exact:true}).click();
   await page.getByRole('heading',{name:'Family plan'}).waitFor();
@@ -171,7 +195,7 @@ try {
   await page.getByRole('button',{name:'Everyone',exact:true}).click();
   for (const viewport of [{width:390,height:850},{width:820,height:1000},{width:1440,height:1000}]) {
     await page.setViewportSize(viewport);
-    for (const name of ['Briefing','Family plan','Inbox','Ask Relay']) {
+    for (const name of ['Briefing','Family plan','Actions','Inbox','Ask Relay']) {
       await nav.getByRole('link', {name:name==='Inbox'?/^Inbox(?: \d+)?$/:name,exact:name!=='Inbox'}).click();
       if (name === 'Inbox') await page.getByRole('button', {name:/^Approved/}).click();
       if (name === 'Ask Relay' && viewport.width === 390) {
@@ -183,7 +207,7 @@ try {
   await page.setViewportSize({width:320,height:720});
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
   const accessibilityTree=await nav.ariaSnapshot();
-  for(const label of ['Briefing','Family plan','Inbox','Ask Relay']) assert.ok(accessibilityTree.includes(label));
+  for(const label of ['Briefing','Family plan','Actions','Inbox','Ask Relay']) assert.ok(accessibilityTree.includes(label));
   await nav.getByRole('link',{name:'Briefing',exact:true}).focus();
   await page.keyboard.press('Enter');
   const day=page.locator('[data-action="calendar-day"]').first();
